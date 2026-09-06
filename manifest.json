@@ -1,6 +1,6 @@
 {
-  "name": "Photo Book",
-  "short_name": "Photo Book",
+  "name": "Album Photo",
+  "short_name": "Album Photo",
   "start_url": "/index.html",
   "display": "standalone",
   "background_color": "#EAF2FA",
