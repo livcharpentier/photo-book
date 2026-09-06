@@ -160,6 +160,11 @@
     background:var(--bg);color:var(--cream-dim);border:1px solid var(--line);
     padding:5px 8px;border-radius:3px;font-size:12px;
   }
+  .btn-add-photo{
+    background:transparent;color:var(--amber);border:1px solid var(--amber-dim);
+    padding:5px 10px;border-radius:3px;font-size:12px;font-weight:500;
+  }
+  .btn-add-photo:hover{background:rgba(216,162,63,0.1);}
 
   .toast{
     position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
@@ -872,7 +877,8 @@ function renderPages(photos, album, layouts){
       cursor += 1;
       const head = document.createElement('div');
       head.className = 'page-head';
-      head.innerHTML = `<span class="page-label">Page de couverture</span>`;
+      head.innerHTML = `<span class="page-label">Page de couverture</span><button class="btn-add-photo" title="Ajouter une photo">+ Photo</button>`;
+      head.querySelector('.btn-add-photo').addEventListener('click', () => document.getElementById('fileInput').click());
 
       const page = document.createElement('div');
       page.className = 'page cover-page';
@@ -906,8 +912,12 @@ function renderPages(photos, album, layouts){
     head.className = 'page-head';
     head.innerHTML = `
       <span class="page-label">Page ${pageIndex + 1}</span>
-      <select class="page-select" data-page-index="${pageIndex}">${templateOptionsHtml(templateId)}</select>
+      <span style="display:flex;gap:8px;align-items:center;">
+        <button class="btn-add-photo" title="Ajouter une photo">+ Photo</button>
+        <select class="page-select" data-page-index="${pageIndex}">${templateOptionsHtml(templateId)}</select>
+      </span>
     `;
+    head.querySelector('.btn-add-photo').addEventListener('click', () => document.getElementById('fileInput').click());
     head.querySelector('select').addEventListener('change', async (e) => {
       await setPageTemplate(album, layouts, pageIndex, e.target.value);
       renderMain();
