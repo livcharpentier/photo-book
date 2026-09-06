@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Photo Book</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#5B9BD5">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=Comic+Neue:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
@@ -240,6 +244,20 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" id="cancelNewAlbum">Annuler</button>
       <button class="btn btn-amber" id="confirmNewAlbum">Créer</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="shareImportBackdrop">
+  <div class="modal">
+    <h3 id="shareImportTitle">Photos partagées</h3>
+    <div class="field" style="margin-bottom:18px;">
+      <label>Ajouter à l'album</label>
+      <select id="shareImportAlbum" style="width:100%;padding:10px 12px;"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="shareImportCancel">Ignorer</button>
+      <button class="btn btn-amber" id="shareImportConfirm">Importer</button>
     </div>
   </div>
 </div>
@@ -861,7 +879,76 @@ document.getElementById('menuBtn').addEventListener('click', () => {
   document.getElementById('sidebar').classList.toggle('open');
 });
 
+/* ---------- Shared photos inbox (from the Android "Partager" sheet) ---------- */
+function openInboxDB(){
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('photobook-share-inbox', 1);
+    req.onupgradeneeded = (e) => {
+      e.target.result.createObjectStore('incoming', { keyPath: 'id', autoIncrement: true });
+    };
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror = (e) => reject(e);
+  });
+}
+async function readInboxFiles(){
+  const db = await openInboxDB();
+  return new Promise((resolve, reject) => {
+    const store = db.transaction('incoming', 'readonly').objectStore('incoming');
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result.map(r => new File([r.blob], r.name || 'photo.jpg', { type: r.blob.type })));
+    req.onerror = reject;
+  });
+}
+async function clearInbox(){
+  const db = await openInboxDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('incoming', 'readwrite');
+    tx.objectStore('incoming').clear();
+    tx.oncomplete = resolve;
+    tx.onerror = reject;
+  });
+}
+
+async function checkSharedPhotos(){
+  if(!location.search.includes('shared=1')) return;
+  history.replaceState(null, '', location.pathname);
+  let files;
+  try{ files = await readInboxFiles(); }catch(e){ return; }
+  if(!files || files.length === 0) return;
+
+  const albums = await listAlbums();
+  const sel = document.getElementById('shareImportAlbum');
+  sel.innerHTML = albums.map(a => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('')
+    + `<option value="__new__">+ Nouvel album</option>`;
+  document.getElementById('shareImportTitle').textContent =
+    `${files.length} photo${files.length>1?'s':''} partagée${files.length>1?'s':''}`;
+  document.getElementById('shareImportBackdrop').classList.add('show');
+
+  document.getElementById('shareImportCancel').onclick = async () => {
+    await clearInbox();
+    document.getElementById('shareImportBackdrop').classList.remove('show');
+  };
+  document.getElementById('shareImportConfirm').onclick = async () => {
+    let targetId = sel.value;
+    if(targetId === '__new__'){
+      const name = `Photos partagées ${new Date().toLocaleDateString('fr-FR')}`;
+      const album = await createAlbum(name);
+      targetId = album.id;
+    }
+    currentAlbumId = targetId;
+    document.getElementById('shareImportBackdrop').classList.remove('show');
+    await clearInbox();
+    await renderAlbumList();
+    await renderMain();
+    await handleFiles(files);
+  };
+}
+
 /* ---------- Init ---------- */
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
 (async function init(){
   fillSprockets();
   initSupabaseClient();
@@ -889,6 +976,7 @@ async function showApp(){
   document.querySelector('.app').style.display = 'flex';
   await renderAlbumList();
   await renderMain();
+  await checkSharedPhotos();
 }
 
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
