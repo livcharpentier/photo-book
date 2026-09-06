@@ -146,6 +146,7 @@
   .cell-empty{background:rgba(44,66,87,0.06);}
   .cell.dragging{opacity:.35;}
   .cell.drag-over{outline:2px solid var(--amber-dim);outline-offset:-2px;}
+  .cell.selected{outline:3px solid var(--amber);outline-offset:-3px;}
   .cell .rm{
     position:absolute;top:4px;right:4px;background:rgba(44,66,87,0.72);color:#fff;
     width:22px;height:22px;border-radius:50%;font-size:13px;line-height:1;opacity:0;
@@ -654,25 +655,38 @@ async function makePrintImage(blob, maxDim = 1800){
 /* ---------- State ---------- */
 let currentAlbumId = null;
 
-/* ---------- Photo drag-to-swap (pointer events — works with touch AND mouse) ----------
+/* ---------- Photo drag-to-swap AND tap-to-swap (pointer events — works with touch AND mouse) ----------
    Native HTML5 drag-and-drop (draggable="true") only fires on desktop mice;
    on a phone, a long-press on an <img> instead opens the browser's own
    "save/share image" menu. Pointer Events unify touch and mouse, so this
-   implements dragging manually: track the pointer, find whichever .cell is
-   underneath it, and on release swap the two photos' positions in the
-   album's order — the same swapPhotoOrder() used everywhere else. */
-let dragState = null; // { photoId, sourceCell }
+   implements both gestures manually:
+   - A real drag (the finger/mouse moves) swaps with whatever cell is under
+     the release point, as before.
+   - A simple tap (no movement) instead selects the photo; tapping a second
+     photo swaps the two; tapping the same one again deselects it — easier
+     to do reliably on a phone than a sustained drag. */
+let dragState = null; // { photoId, sourceCell, startX, startY, moved }
+let selectedPhotoId = null;
+const DRAG_MOVE_THRESHOLD = 8; // px before a press counts as a drag rather than a tap
+
+function clearSelection(){
+  selectedPhotoId = null;
+  document.querySelectorAll('.cell.selected').forEach(c => c.classList.remove('selected'));
+}
 
 function attachDragHandlers(cell, photoId){
   cell.addEventListener('pointerdown', (e) => {
     if(e.target.closest('.rm')) return;
-    dragState = { photoId, sourceCell: cell };
+    dragState = { photoId, sourceCell: cell, startX: e.clientX, startY: e.clientY, moved: false };
     cell.classList.add('dragging');
   });
 }
 
 document.addEventListener('pointermove', (e) => {
   if(!dragState) return;
+  const dx = e.clientX - dragState.startX, dy = e.clientY - dragState.startY;
+  if(Math.hypot(dx, dy) > DRAG_MOVE_THRESHOLD) dragState.moved = true;
+  if(!dragState.moved) return;
   e.preventDefault();
   document.querySelectorAll('.cell.drag-over').forEach(c => c.classList.remove('drag-over'));
   const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -684,14 +698,33 @@ document.addEventListener('pointermove', (e) => {
 
 document.addEventListener('pointerup', async (e) => {
   if(!dragState) return;
-  const el = document.elementFromPoint(e.clientX, e.clientY);
-  const targetCell = el && el.closest('.cell');
+  const { photoId: draggedId, sourceCell, moved } = dragState;
   document.querySelectorAll('.cell.dragging, .cell.drag-over').forEach(c => c.classList.remove('dragging', 'drag-over'));
-  const draggedId = dragState.photoId;
   dragState = null;
-  if(targetCell && targetCell.dataset.photoId && targetCell.dataset.photoId !== draggedId){
-    await swapPhotoOrder(currentAlbumId, draggedId, targetCell.dataset.photoId);
+
+  if(moved){
+    // A real drag: swap with whatever cell is under the release point.
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const targetCell = el && el.closest('.cell');
+    clearSelection();
+    if(targetCell && targetCell.dataset.photoId && targetCell.dataset.photoId !== draggedId){
+      await swapPhotoOrder(currentAlbumId, draggedId, targetCell.dataset.photoId);
+      renderMain();
+    }
+    return;
+  }
+
+  // A simple tap: tap-to-select, tap-a-second-photo-to-swap.
+  if(selectedPhotoId === draggedId){
+    clearSelection();
+  }else if(selectedPhotoId){
+    const prevId = selectedPhotoId;
+    clearSelection();
+    await swapPhotoOrder(currentAlbumId, prevId, draggedId);
     renderMain();
+  }else{
+    selectedPhotoId = draggedId;
+    sourceCell.classList.add('selected');
   }
 });
 
@@ -826,6 +859,7 @@ async function renderMain(){
 function renderPages(photos, album, layouts){
   const pagesEl = document.getElementById('pagesEl');
   pagesEl.innerHTML = '';
+  selectedPhotoId = null; // DOM is being rebuilt — any pending tap-selection no longer has a visible target
   const pageAspect = pageAspectFor(album.format);
   let cursor = 0;
 
