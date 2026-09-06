@@ -764,7 +764,7 @@ async function handleFiles(fileList){
   toast(`Ajout de ${files.length} photo${files.length>1?'s':''}…`);
 
   const prepared = [];
-  for(const file of files){
+  for(const [i, file] of files.entries()){
     try{
       const [thumb, takenAt] = await Promise.all([makeThumbnail(file), getPhotoDate(file)]);
       prepared.push({
@@ -773,6 +773,7 @@ async function handleFiles(fileList){
         blob: file,
         thumb,
         takenAt,
+        order: i, // placeholder — reorderPhotos() overwrites this right after upload; the column is NOT NULL so it can't be left unset at insert time
         name: file.name
       });
     }catch(err){
