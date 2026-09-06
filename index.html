@@ -126,6 +126,12 @@
   }
   .fmt-carre .page{ --page-ratio: 1/1; }
 
+  .cover-page{ padding:18px; }
+  .cover-title{
+    font-family:'Baloo 2',sans-serif; font-weight:700; text-align:center;
+    color:var(--ink); font-size:clamp(20px, 4vw, 32px); line-height:1.2;
+  }
+
   .cell{
     position:relative;background:rgba(44,66,87,0.06);border-radius:1px;overflow:hidden;
     display:flex;align-items:center;justify-content:center;
@@ -391,6 +397,10 @@ const TEMPLATES = {
     slots:[[1,2,1,2],[2,3,1,2],[3,4,1,2],[4,5,1,2],[1,2,2,3],[2,3,2,3],[3,4,2,3],[4,5,2,3]] }
 };
 const DEFAULT_TEMPLATE = '4a';
+// Auto-variety rotation for pages the person hasn't explicitly customized —
+// cycles through different photo counts/structures instead of repeating the
+// same grid every page ("panaché" of 2 to 6+ photos, as requested).
+const DEFAULT_ROTATION = ['3a','2a','4b','5a','2b','6a','4a','3b'];
 
 function templateOptionsHtml(selected){
   const groups = {};
@@ -406,23 +416,88 @@ function templateOptionsHtml(selected){
 }
 
 // Given the flat photo order and the album's explicit per-page template
-// choices, return one template id per page — extending with the default
-// template for any photos not yet covered by an explicit choice.
+// choices, return one template id per page. Page 1 is always a fixed
+// "cover" page (album title + the first photo chronologically); the rest
+// use the explicit per-page choices, extended with a varied rotation for
+// any photos not yet covered.
 function computeEffectiveLayouts(album, totalPhotos){
+  if(totalPhotos === 0) return ['cover'];
+  const layouts = ['cover'];
+  let covered = 1; // the cover page consumes the first photo
   const chosen = album.pageLayouts || [];
-  const layouts = [];
-  let covered = 0;
   for(const tid of chosen){
     if(covered >= totalPhotos) break;
     layouts.push(tid);
     covered += TEMPLATES[tid].slots.length;
   }
+  let rot = 0;
   while(covered < totalPhotos){
-    layouts.push(DEFAULT_TEMPLATE);
-    covered += TEMPLATES[DEFAULT_TEMPLATE].slots.length;
+    const tid = DEFAULT_ROTATION[rot % DEFAULT_ROTATION.length];
+    layouts.push(tid);
+    covered += TEMPLATES[tid].slots.length;
+    rot++;
   }
-  if(layouts.length === 0) layouts.push(DEFAULT_TEMPLATE);
   return layouts;
+}
+
+/* ---------- Photo orientation (portrait vs. landscape) ----------
+   Detected from the thumbnail's actual pixel dimensions (not EXIF, which
+   can lie about orientation after rotation) so photo-to-slot matching works
+   for every photo regardless of when it was uploaded. Cached per photo id
+   since decoding the same data URL repeatedly on every render is wasteful. */
+const orientationCache = new Map();
+function detectOrientation(photo){
+  if(orientationCache.has(photo.id)) return Promise.resolve(orientationCache.get(photo.id));
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const o = img.naturalWidth >= img.naturalHeight ? 'landscape' : 'portrait';
+      orientationCache.set(photo.id, o);
+      resolve(o);
+    };
+    img.onerror = () => { orientationCache.set(photo.id, 'landscape'); resolve('landscape'); };
+    img.src = photo.thumb;
+  });
+}
+async function annotateOrientations(photos){
+  const os = await Promise.all(photos.map(detectOrientation));
+  return photos.map((p, i) => ({ ...p, orientation: os[i] }));
+}
+
+function pageAspectFor(format){
+  const d = PAGE_DIMS[format];
+  return d.w / d.h;
+}
+// Physical shape of a slot once the page's real aspect ratio is taken into
+// account — a slot that looks "wide" in grid units can still be a portrait
+// rectangle in mm depending on the page format.
+function slotShape(template, slot, pageAspect){
+  const [c0,c1,r0,r1] = slot;
+  const wFrac = (c1-c0) / template.cols;
+  const hFrac = (r1-r0) / template.rows;
+  const physW = wFrac * pageAspect;
+  const physH = hFrac;
+  return physW >= physH ? 'landscape' : 'portrait';
+}
+// Matches photos to a page's slots by shape (portrait photos into portrait
+// slots, landscape into landscape) while preserving each orientation's own
+// chronological order — falls back to whichever photos remain if one
+// orientation runs out.
+function assignPhotosToSlots(slicePhotos, template, pageAspect){
+  const portraitQ = slicePhotos.filter(p => p.orientation === 'portrait');
+  const landscapeQ = slicePhotos.filter(p => p.orientation !== 'portrait');
+  let pi = 0, li = 0;
+  return template.slots.map(slot => {
+    const wantsPortrait = slotShape(template, slot, pageAspect) === 'portrait';
+    if(wantsPortrait){
+      if(pi < portraitQ.length) return portraitQ[pi++];
+      if(li < landscapeQ.length) return landscapeQ[li++];
+    }else{
+      if(li < landscapeQ.length) return landscapeQ[li++];
+      if(pi < portraitQ.length) return portraitQ[pi++];
+    }
+    return undefined;
+  });
 }
 
 /* ---------- EXIF-lite date reader ----------
@@ -620,7 +695,8 @@ async function renderMain(){
   const album = albums.find(a => a.id === currentAlbumId);
   if(!album){ currentAlbumId = null; return renderMain(); }
   const photos = await listPhotos(album.id);
-  const layouts = computeEffectiveLayouts(album, photos.length);
+  const annotated = await annotateOrientations(photos);
+  const layouts = computeEffectiveLayouts(album, annotated.length);
 
   main.innerHTML = `
     <div class="toolbar">
@@ -664,22 +740,55 @@ async function renderMain(){
     handleFiles(e.dataTransfer.files);
   });
 
-  renderPages(photos, album, layouts);
+  renderPages(annotated, album, layouts);
 }
 
 function renderPages(photos, album, layouts){
   const pagesEl = document.getElementById('pagesEl');
   pagesEl.innerHTML = '';
+  const pageAspect = pageAspectFor(album.format);
   let cursor = 0;
 
   layouts.forEach((templateId, pageIndex) => {
+    const block = document.createElement('div');
+    block.className = 'page-block';
+
+    if(templateId === 'cover'){
+      const coverPhoto = photos[cursor];
+      cursor += 1;
+      const head = document.createElement('div');
+      head.className = 'page-head';
+      head.innerHTML = `<span class="page-label">Page de couverture</span>`;
+
+      const page = document.createElement('div');
+      page.className = 'page cover-page';
+      page.style.display = 'flex';
+      page.style.flexDirection = 'column';
+      page.style.gap = '10px';
+
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.style.flex = '1';
+      if(coverPhoto){
+        cell.innerHTML = `<img src="${coverPhoto.thumb}" alt="">`;
+      }
+      const titleEl = document.createElement('div');
+      titleEl.className = 'cover-title';
+      titleEl.textContent = album.name;
+
+      page.appendChild(cell);
+      page.appendChild(titleEl);
+      block.appendChild(head);
+      block.appendChild(page);
+      pagesEl.appendChild(block);
+      return;
+    }
+
     const template = TEMPLATES[templateId];
     const slotCount = template.slots.length;
     const slice = photos.slice(cursor, cursor + slotCount);
     cursor += slotCount;
-
-    const block = document.createElement('div');
-    block.className = 'page-block';
+    const assigned = assignPhotosToSlots(slice, template, pageAspect);
 
     const head = document.createElement('div');
     head.className = 'page-head';
@@ -702,7 +811,7 @@ function renderPages(photos, album, layouts){
       cell.className = 'cell';
       cell.style.gridColumn = `${c0} / ${c1}`;
       cell.style.gridRow = `${r0} / ${r1}`;
-      const photo = slice[slotIdx];
+      const photo = assigned[slotIdx];
       if(photo){
         cell.draggable = true;
         cell.dataset.photoId = photo.id;
@@ -741,7 +850,9 @@ function renderPages(photos, album, layouts){
 // (and every page before it, so their layouts don't silently drift) and let
 // computeEffectiveLayouts regenerate whatever comes after with the default.
 async function setPageTemplate(album, currentLayouts, pageIndex, newTemplateId){
-  const kept = currentLayouts.slice(0, pageIndex);
+  // currentLayouts[0] is always the fixed cover page and never stored in
+  // album.pageLayouts (which only tracks the grid pages after it).
+  const kept = currentLayouts.slice(1, pageIndex);
   kept.push(newTemplateId);
   album.pageLayouts = kept;
   await updateAlbum(album);
@@ -838,10 +949,12 @@ function slotsToRects(template, pageW, pageH, margin, gutter){
 }
 
 async function exportAlbumToPDF(album){
-  const photos = await listPhotos(album.id);
-  if(photos.length === 0) return;
+  const rawPhotos = await listPhotos(album.id);
+  if(rawPhotos.length === 0) return;
   toast('Génération du PDF…');
+  const photos = await annotateOrientations(rawPhotos);
   const dims = PAGE_DIMS[album.format];
+  const pageAspect = dims.w / dims.h;
   const layouts = computeEffectiveLayouts(album, photos.length);
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: dims.w > dims.h ? 'landscape' : 'portrait', unit: 'mm', format: [dims.w, dims.h] });
@@ -850,13 +963,33 @@ async function exportAlbumToPDF(album){
   let cursor = 0;
   for(let p = 0; p < layouts.length; p++){
     if(p > 0) doc.addPage([dims.w, dims.h]);
+
+    if(layouts[p] === 'cover'){
+      const photo = photos[cursor];
+      cursor += 1;
+      const titleH = 22;
+      if(photo){
+        try{
+          const blob = await downloadPhotoBlob(photo);
+          const { dataUrl } = await makePrintImage(blob);
+          doc.addImage(dataUrl, 'JPEG', margin, margin, dims.w - margin*2, dims.h - margin*2 - titleH, undefined, 'FAST');
+        }catch(err){ console.error('Image de couverture ignorée', err); }
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(22);
+      doc.text(album.name, dims.w/2, dims.h - margin - titleH/2 + 4, { align: 'center' });
+      continue;
+    }
+
     const template = TEMPLATES[layouts[p]];
     const rects = slotsToRects(template, dims.w, dims.h, margin, gutter);
     const slice = photos.slice(cursor, cursor + template.slots.length);
     cursor += template.slots.length;
+    const assigned = assignPhotosToSlots(slice, template, pageAspect);
 
-    for(let i = 0; i < slice.length; i++){
-      const photo = slice[i];
+    for(let i = 0; i < assigned.length; i++){
+      const photo = assigned[i];
+      if(!photo) continue;
       const r = rects[i];
       try{
         const blob = await downloadPhotoBlob(photo);
