@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Photo Book</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --bg: #2A2420;
+    --bg-soft: #352E28;
+    --paper: #F2E9DA;
+    --paper-shadow: rgba(0,0,0,.35);
+    --ink: #2A2420;
+    --cream: #EDE4D3;
+    --cream-dim: #B9AB94;
+    --amber: #D8A23F;
+    --amber-dim: #a97e34;
+    --danger: #B4573F;
+    --line: rgba(237,228,211,0.14);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--cream);font-family:'Work Sans',sans-serif;min-height:100vh;}
+  h1,h2,h3,.serif{font-family:'Spectral',serif;}
+  button{font-family:inherit;cursor:pointer;border:none;}
+  input,select{font-family:inherit;}
+
+  /* Sprocket strip — the one bold device, used once as a structural divider */
+  .sprockets{
+    width:22px;flex-shrink:0;background:var(--bg-soft);
+    display:flex;flex-direction:column;align-items:center;
+    padding:14px 0;gap:14px;overflow:hidden;
+  }
+  .sprockets span{width:8px;height:8px;border-radius:2px;background:rgba(237,228,211,0.18);flex-shrink:0;}
+
+  .app{display:flex;min-height:100vh;}
+
+  .sidebar{
+    width:260px;flex-shrink:0;background:var(--bg-soft);padding:28px 20px;
+    display:flex;flex-direction:column;gap:18px;
+  }
+  .brand{display:flex;flex-direction:column;gap:2px;margin-bottom:8px;}
+  .brand .kicker{font-size:12.5px;color:var(--amber);letter-spacing:.02em;}
+  .brand h1{font-size:22px;margin:0;font-weight:600;}
+
+  .new-album{
+    background:transparent;border:1px solid var(--amber-dim);color:var(--amber);
+    padding:10px 14px;border-radius:3px;font-size:14px;font-weight:500;
+    transition:background .15s;
+  }
+  .new-album:hover{background:rgba(216,162,63,0.1);}
+
+  .album-list{display:flex;flex-direction:column;gap:2px;overflow-y:auto;}
+  .album-item{
+    padding:11px 12px;border-radius:3px;font-size:14.5px;color:var(--cream-dim);
+    display:flex;justify-content:space-between;align-items:center;gap:8px;
+    border-left:2px solid transparent;
+  }
+  .album-item:hover{background:rgba(237,228,211,0.05);}
+  .album-item.active{background:rgba(216,162,63,0.12);border-left-color:var(--amber);color:var(--cream);}
+  .album-item .count{font-size:12px;color:var(--cream-dim);opacity:.8;}
+  .album-item .del{opacity:0;background:none;color:var(--danger);font-size:16px;padding:2px 4px;}
+  .album-item:hover .del{opacity:.7;}
+  .album-item .del:hover{opacity:1;}
+
+  .empty-sidebar{color:var(--cream-dim);font-size:13.5px;line-height:1.5;padding:8px 4px;}
+
+  .main{flex:1;padding:36px 44px;overflow-y:auto;}
+  .main-empty{
+    height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    color:var(--cream-dim);gap:10px;text-align:center;
+  }
+  .main-empty h2{color:var(--cream);font-weight:500;}
+
+  .toolbar{
+    display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;
+    margin-bottom:28px;padding-bottom:20px;border-bottom:1px solid var(--line);
+  }
+  .toolbar h2{margin:0 0 4px;font-size:26px;font-weight:500;}
+  .toolbar .meta{color:var(--cream-dim);font-size:13.5px;}
+  .toolbar-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+
+  .field{display:flex;flex-direction:column;gap:4px;}
+  .field label{font-size:11.5px;color:var(--cream-dim);text-transform:uppercase;letter-spacing:.04em;}
+  select{
+    background:var(--bg);color:var(--cream);border:1px solid var(--line);
+    padding:8px 10px;border-radius:3px;font-size:13.5px;
+  }
+
+  .btn{
+    padding:9px 16px;border-radius:3px;font-size:13.5px;font-weight:500;
+    display:inline-flex;align-items:center;gap:7px;
+  }
+  .btn-amber{background:var(--amber);color:#2A2420;}
+  .btn-amber:hover{background:#e2ad4c;}
+  .btn-ghost{background:transparent;color:var(--cream);border:1px solid var(--line);}
+  .btn-ghost:hover{background:rgba(237,228,211,0.06);}
+  .btn:disabled{opacity:.4;cursor:not-allowed;}
+
+  .drop-zone{
+    border:1.5px dashed var(--line);border-radius:6px;padding:26px;text-align:center;
+    color:var(--cream-dim);font-size:13.5px;margin-bottom:32px;transition:border-color .15s, background .15s;
+    cursor:pointer;
+  }
+  .drop-zone.drag-over{border-color:var(--amber);background:rgba(216,162,63,0.06);}
+  .drop-zone strong{color:var(--amber);font-weight:500;}
+
+  /* Pages — each rendered as a literal paper sheet */
+  .pages{display:flex;flex-direction:column;gap:36px;}
+  .page-block{display:flex;flex-direction:column;gap:8px;}
+  .page-label{font-size:12px;color:var(--cream-dim);letter-spacing:.03em;}
+  .page{
+    background:var(--paper);color:var(--ink);border-radius:2px;
+    box-shadow:0 10px 28px var(--paper-shadow);
+    padding:14px;display:grid;gap:10px;
+    aspect-ratio: var(--page-ratio, 210/297);
+    max-width:520px;
+  }
+  .fmt-carre .page{ --page-ratio: 1/1; }
+
+  .cell{
+    position:relative;background:#00000010;border-radius:1px;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .cell img{width:100%;height:100%;object-fit:cover;display:block;}
+  .cell.dragging{opacity:.35;}
+  .cell.drag-over{outline:2px solid var(--amber-dim);outline-offset:-2px;}
+  .cell .rm{
+    position:absolute;top:4px;right:4px;background:rgba(42,36,32,0.72);color:#fff;
+    width:22px;height:22px;border-radius:50%;font-size:13px;line-height:1;opacity:0;
+    display:flex;align-items:center;justify-content:center;transition:opacity .12s;
+  }
+  .cell:hover .rm{opacity:1;}
+  .cell{cursor:grab;}
+
+  .page-head{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .page-select{
+    background:var(--bg);color:var(--cream-dim);border:1px solid var(--line);
+    padding:5px 8px;border-radius:3px;font-size:12px;
+  }
+
+  .toast{
+    position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+    background:var(--bg-soft);color:var(--cream);padding:11px 18px;border-radius:4px;
+    font-size:13.5px;border:1px solid var(--line);opacity:0;pointer-events:none;transition:opacity .2s;
+    z-index:50;
+  }
+  .toast.show{opacity:1;}
+
+  .modal-backdrop{
+    position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;
+    align-items:center;justify-content:center;z-index:100;
+  }
+  .modal-backdrop.show{display:flex;}
+  .modal{
+    background:var(--bg-soft);border:1px solid var(--line);border-radius:6px;
+    padding:26px;width:340px;
+  }
+  .modal h3{margin:0 0 16px;font-weight:500;font-size:17px;}
+  .modal input[type=text]{
+    width:100%;background:var(--bg);color:var(--cream);border:1px solid var(--line);
+    padding:10px 12px;border-radius:3px;font-size:14px;margin-bottom:18px;
+  }
+  .modal-actions{display:flex;justify-content:flex-end;gap:10px;}
+
+  @media (max-width: 760px){
+    .sidebar{position:fixed;inset:0 auto 0 22px;z-index:20;transform:translateX(-100%);transition:transform .2s;width:240px;}
+    .sidebar.open{transform:translateX(0);}
+    .main{padding:24px 18px;}
+    .sprockets{display:none;}
+    .menu-btn{display:flex !important;}
+  }
+  .menu-btn{display:none;background:none;color:var(--cream);font-size:22px;padding:4px 8px;}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="kicker">Photo Book</span>
+      <h1>Mes albums</h1>
+    </div>
+    <button class="new-album" id="btnNewAlbum">+ Nouvel album</button>
+    <div class="album-list" id="albumList"></div>
+  </div>
+
+  <div class="sprockets" id="sprockets"></div>
+
+  <div class="main">
+    <button class="menu-btn" id="menuBtn">☰</button>
+    <div id="mainContent"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <h3>Nouvel album</h3>
+    <input type="text" id="newAlbumName" placeholder="Ex : Vacances Bretagne 2026" maxlength="60">
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="cancelNewAlbum">Annuler</button>
+      <button class="btn btn-amber" id="confirmNewAlbum">Créer</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<input type="file" id="fileInput" accept="image/*" multiple style="display:none">
+
+<script>
+/* ---------- Storage layer (IndexedDB) ----------
+   V1 stores everything locally in the browser. This is intentional for now:
+   it works immediately with zero setup. The next iteration swaps this module
+   for Supabase (storage bucket + tables) so albums sync across devices and
+   survive a browser reset — the rest of the app won't need to change. */
+const DB_NAME = 'photobook';
+const DB_VERSION = 1;
+let db;
+
+function openDB(){
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const d = e.target.result;
+      if(!d.objectStoreNames.contains('albums')){
+        d.createObjectStore('albums', {keyPath:'id'});
+      }
+      if(!d.objectStoreNames.contains('photos')){
+        const store = d.createObjectStore('photos', {keyPath:'id'});
+        store.createIndex('albumId', 'albumId', {unique:false});
+      }
+    };
+    req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+    req.onerror = (e) => reject(e);
+  });
+}
+
+function tx(storeName, mode){
+  return db.transaction(storeName, mode).objectStore(storeName);
+}
+function reqToPromise(req){
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function listAlbums(){
+  const all = await reqToPromise(tx('albums','readonly').getAll());
+  return all.sort((a,b) => b.createdAt - a.createdAt);
+}
+async function createAlbum(name){
+  const album = {
+    id: crypto.randomUUID(), name, createdAt: Date.now(),
+    format: 'a4', pageLayouts: []
+  };
+  await reqToPromise(tx('albums','readwrite').add(album));
+  return album;
+}
+async function updateAlbum(album){
+  await reqToPromise(tx('albums','readwrite').put(album));
+}
+async function deleteAlbum(id){
+  await reqToPromise(tx('albums','readwrite').delete(id));
+  const photos = await reqToPromise(tx('photos','readonly').index('albumId').getAll(id));
+  const store = tx('photos','readwrite');
+  photos.forEach(p => store.delete(p.id));
+}
+async function listPhotos(albumId){
+  const all = await reqToPromise(tx('photos','readonly').index('albumId').getAll(albumId));
+  return all.sort((a,b) => a.order - b.order);
+}
+async function addPhoto(photo){
+  await reqToPromise(tx('photos','readwrite').add(photo));
+}
+async function deletePhoto(id){
+  await reqToPromise(tx('photos','readwrite').delete(id));
+}
+async function reorderPhotos(photos){
+  const store = tx('photos','readwrite');
+  photos.forEach((p, i) => { p.order = i; store.put(p); });
+}
+
+/* ---------- Layout templates ----------
+   Each template is a grid of `cols` x `rows` cells; each slot spans
+   [colStart, colEnd, rowStart, rowEnd] on that grid (1-based, end exclusive —
+   same convention as CSS grid-column/grid-row). Slots are listed in the order
+   photos should fill them (the emphasis slot first). This gives Cheerz-style
+   asymmetric layouts instead of plain uniform grids. */
+const TEMPLATES = {
+  '1a': { label: '1 photo — pleine page', cols:1, rows:1,
+    slots:[[1,2,1,2]] },
+
+  '2a': { label: '2 photos — côte à côte', cols:2, rows:1,
+    slots:[[1,2,1,2],[2,3,1,2]] },
+  '2b': { label: '2 photos — grande + petite', cols:1, rows:3,
+    slots:[[1,2,1,3],[1,2,3,4]] },
+
+  '3a': { label: '3 photos — grande à gauche', cols:3, rows:2,
+    slots:[[1,3,1,3],[3,4,1,2],[3,4,2,3]] },
+  '3b': { label: '3 photos — grande en haut', cols:2, rows:3,
+    slots:[[1,3,1,3],[1,2,3,4],[2,3,3,4]] },
+
+  '4a': { label: '4 photos — grille égale', cols:2, rows:2,
+    slots:[[1,2,1,2],[2,3,1,2],[1,2,2,3],[2,3,2,3]] },
+  '4b': { label: '4 photos — grande + 3', cols:3, rows:3,
+    slots:[[1,3,1,4],[3,4,1,2],[3,4,2,3],[3,4,3,4]] },
+
+  '5a': { label: '5 photos — grande + 4', cols:3, rows:2,
+    slots:[[1,2,1,3],[2,3,1,2],[3,4,1,2],[2,3,2,3],[3,4,2,3]] },
+
+  '6a': { label: '6 photos — grille égale', cols:3, rows:2,
+    slots:[[1,2,1,2],[2,3,1,2],[3,4,1,2],[1,2,2,3],[2,3,2,3],[3,4,2,3]] },
+
+  '7a': { label: '7 photos — mosaïque', cols:4, rows:3,
+    slots:[[1,3,1,3],[3,4,1,2],[4,5,1,2],[3,4,2,3],[4,5,2,3],[1,3,3,4],[3,5,3,4]] },
+
+  '8a': { label: '8 photos — grille égale', cols:4, rows:2,
+    slots:[[1,2,1,2],[2,3,1,2],[3,4,1,2],[4,5,1,2],[1,2,2,3],[2,3,2,3],[3,4,2,3],[4,5,2,3]] }
+};
+const DEFAULT_TEMPLATE = '4a';
+
+function templateOptionsHtml(selected){
+  const groups = {};
+  Object.entries(TEMPLATES).forEach(([id, t]) => {
+    const count = t.slots.length;
+    (groups[count] = groups[count] || []).push([id, t]);
+  });
+  return Object.keys(groups).sort((a,b)=>a-b).map(count =>
+    groups[count].map(([id, t]) =>
+      `<option value="${id}" ${id===selected?'selected':''}>${t.label}</option>`
+    ).join('')
+  ).join('');
+}
+
+// Given the flat photo order and the album's explicit per-page template
+// choices, return one template id per page — extending with the default
+// template for any photos not yet covered by an explicit choice.
+function computeEffectiveLayouts(album, totalPhotos){
+  const chosen = album.pageLayouts || [];
+  const layouts = [];
+  let covered = 0;
+  for(const tid of chosen){
+    if(covered >= totalPhotos) break;
+    layouts.push(tid);
+    covered += TEMPLATES[tid].slots.length;
+  }
+  while(covered < totalPhotos){
+    layouts.push(DEFAULT_TEMPLATE);
+    covered += TEMPLATES[DEFAULT_TEMPLATE].slots.length;
+  }
+  if(layouts.length === 0) layouts.push(DEFAULT_TEMPLATE);
+  return layouts;
+}
+
+/* ---------- EXIF-lite date reader ----------
+   Reads the DateTimeOriginal (or fallback DateTime) tag straight out of the
+   JPEG's EXIF block, without pulling in a library. Falls back to the file's
+   last-modified date for formats without EXIF (PNG, HEIC, screenshots…). */
+async function getPhotoDate(file){
+  try{
+    if(file.type === 'image/jpeg' || file.type === 'image/jpg'){
+      const exifDate = await readJpegExifDate(file);
+      if(exifDate) return exifDate;
+    }
+  }catch(e){ /* fall through to lastModified */ }
+  return file.lastModified || Date.now();
+}
+
+function readJpegExifDate(file){
+  return file.slice(0, 131072).arrayBuffer().then(buf => {
+    const view = new DataView(buf);
+    if(view.getUint16(0) !== 0xFFD8) return null;
+    let offset = 2;
+    while(offset < view.byteLength - 4){
+      if(view.getUint16(offset) !== 0xFFE1){
+        offset += 2 + view.getUint16(offset + 2);
+        continue;
+      }
+      const tiffStart = offset + 10; // skip marker(2) + length(2) + "Exif\0\0"(6)
+      if(view.getUint32(tiffStart - 6) !== 0x45786966) return null; // "Exif"
+      const little = view.getUint16(tiffStart) === 0x4949;
+      const getU16 = (o) => view.getUint16(o, little);
+      const getU32 = (o) => view.getUint32(o, little);
+      const firstIFD = tiffStart + getU32(tiffStart + 4);
+      const date = scanIFDForDate(view, tiffStart, firstIFD, little, getU16, getU32);
+      return date;
+    }
+    return null;
+  }).catch(() => null);
+}
+
+function scanIFDForDate(view, tiffStart, ifdOffset, little, getU16, getU32){
+  const entries = getU16(ifdOffset);
+  let exifSubIFD = null;
+  for(let i=0;i<entries;i++){
+    const entryOffset = ifdOffset + 2 + i*12;
+    const tag = getU16(entryOffset);
+    if(tag === 0x8769){ // ExifIFD pointer
+      exifSubIFD = tiffStart + getU32(entryOffset + 8);
+    }
+    if(tag === 0x0132){ // DateTime (fallback, IFD0)
+      const valOffset = tiffStart + getU32(entryOffset + 8);
+      const str = readAsciiAt(view, valOffset, 19);
+      const parsed = parseExifDateString(str);
+      if(parsed) return parsed; // keep looking for the more precise tag below
+    }
+  }
+  if(exifSubIFD != null){
+    const subEntries = getU16(exifSubIFD);
+    for(let i=0;i<subEntries;i++){
+      const entryOffset = exifSubIFD + 2 + i*12;
+      const tag = getU16(entryOffset);
+      if(tag === 0x9003 || tag === 0x9004){ // DateTimeOriginal / DateTimeDigitized
+        const valOffset = tiffStart + getU32(entryOffset + 8);
+        const str = readAsciiAt(view, valOffset, 19);
+        const parsed = parseExifDateString(str);
+        if(parsed) return parsed;
+      }
+    }
+  }
+  return null;
+}
+function readAsciiAt(view, offset, len){
+  let s = '';
+  for(let i=0;i<len;i++){
+    const c = view.getUint8(offset+i);
+    if(c === 0) break;
+    s += String.fromCharCode(c);
+  }
+  return s;
+}
+function parseExifDateString(str){
+  // Format: "YYYY:MM:DD HH:MM:SS"
+  const m = /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/.exec(str);
+  if(!m) return null;
+  const [, y, mo, d, h, mi, s] = m.map(Number);
+  const t = new Date(y, mo-1, d, h, mi, s).getTime();
+  return isNaN(t) ? null : t;
+}
+
+/* ---------- Image helpers ---------- */
+function fileToImageBitmap(file){
+  return createImageBitmap(file);
+}
+// Resize into a data URL for on-screen preview (keeps the app fast).
+async function makeThumbnail(file, maxDim = 900){
+  const bitmap = await fileToImageBitmap(file);
+  const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale), h = Math.round(bitmap.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+// Resize for print export — larger target, since this ends up on paper.
+async function makePrintImage(blob, maxDim = 1800){
+  const bitmap = await createImageBitmap(blob);
+  const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale), h = Math.round(bitmap.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+  return { dataUrl: canvas.toDataURL('image/jpeg', 0.92), w, h };
+}
+
+/* ---------- State ---------- */
+let currentAlbumId = null;
+let dragPhotoId = null;
+
+/* ---------- UI: toast ---------- */
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/* ---------- UI: sprockets (decorative film strip, height-matched) ---------- */
+function fillSprockets(){
+  const el = document.getElementById('sprockets');
+  el.innerHTML = '';
+  const count = Math.ceil(window.innerHeight / 26) + 2;
+  for(let i=0;i<count;i++){
+    const s = document.createElement('span');
+    el.appendChild(s);
+  }
+}
+window.addEventListener('resize', fillSprockets);
+
+/* ---------- Render: album list ---------- */
+async function renderAlbumList(){
+  const albums = await listAlbums();
+  const el = document.getElementById('albumList');
+  if(albums.length === 0){
+    el.innerHTML = '<div class="empty-sidebar">Aucun album pour l\'instant. Crée ton premier album pour commencer.</div>';
+    return;
+  }
+  el.innerHTML = '';
+  for(const album of albums){
+    const photos = await listPhotos(album.id);
+    const item = document.createElement('div');
+    item.className = 'album-item' + (album.id === currentAlbumId ? ' active' : '');
+    item.innerHTML = `
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(album.name)}</span>
+      <span style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+        <span class="count">${photos.length}</span>
+        <button class="del" title="Supprimer l'album">✕</button>
+      </span>
+    `;
+    item.addEventListener('click', (e) => {
+      if(e.target.closest('.del')) return;
+      currentAlbumId = album.id;
+      renderAlbumList();
+      renderMain();
+      document.getElementById('sidebar').classList.remove('open');
+    });
+    item.querySelector('.del').addEventListener('click', async () => {
+      if(!confirm(`Supprimer l'album "${album.name}" et toutes ses photos ?`)) return;
+      await deleteAlbum(album.id);
+      if(currentAlbumId === album.id) currentAlbumId = null;
+      await renderAlbumList();
+      await renderMain();
+    });
+    el.appendChild(item);
+  }
+}
+
+function escapeHtml(str){
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+/* ---------- Render: main content ---------- */
+async function renderMain(){
+  const main = document.getElementById('mainContent');
+  if(!currentAlbumId){
+    main.innerHTML = `
+      <div class="main-empty">
+        <h2>Sélectionne un album</h2>
+        <p>Ou crée-en un nouveau pour commencer à ajouter des photos.</p>
+      </div>`;
+    return;
+  }
+  const albums = await listAlbums();
+  const album = albums.find(a => a.id === currentAlbumId);
+  if(!album){ currentAlbumId = null; return renderMain(); }
+  const photos = await listPhotos(album.id);
+  const layouts = computeEffectiveLayouts(album, photos.length);
+
+  main.innerHTML = `
+    <div class="toolbar">
+      <div>
+        <h2>${escapeHtml(album.name)}</h2>
+        <div class="meta">${photos.length} photo${photos.length>1?'s':''} · ${layouts.length} page${layouts.length !== 1 ? 's':''}</div>
+      </div>
+      <div class="toolbar-controls">
+        <div class="field">
+          <label>Format</label>
+          <select id="selFormat">
+            <option value="a4" ${album.format==='a4'?'selected':''}>A4 portrait</option>
+            <option value="carre" ${album.format==='carre'?'selected':''}>Carré</option>
+          </select>
+        </div>
+        <button class="btn btn-amber" id="btnExport" ${photos.length===0?'disabled':''}>Exporter en PDF</button>
+      </div>
+    </div>
+
+    <div class="drop-zone" id="dropZone">
+      <strong>Clique ici</strong> ou dépose des photos pour les ajouter à cet album — elles sont classées par date de prise de vue
+    </div>
+
+    <div class="pages ${album.format==='carre'?'fmt-carre':''}" id="pagesEl"></div>
+  `;
+
+  document.getElementById('selFormat').addEventListener('change', async (e) => {
+    album.format = e.target.value;
+    await updateAlbum(album);
+    renderMain();
+  });
+  document.getElementById('btnExport').addEventListener('click', () => exportAlbumToPDF(album));
+
+  const dropZone = document.getElementById('dropZone');
+  dropZone.addEventListener('click', () => document.getElementById('fileInput').click());
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    handleFiles(e.dataTransfer.files);
+  });
+
+  renderPages(photos, album, layouts);
+}
+
+function renderPages(photos, album, layouts){
+  const pagesEl = document.getElementById('pagesEl');
+  pagesEl.innerHTML = '';
+  let cursor = 0;
+
+  layouts.forEach((templateId, pageIndex) => {
+    const template = TEMPLATES[templateId];
+    const slotCount = template.slots.length;
+    const slice = photos.slice(cursor, cursor + slotCount);
+    cursor += slotCount;
+
+    const block = document.createElement('div');
+    block.className = 'page-block';
+
+    const head = document.createElement('div');
+    head.className = 'page-head';
+    head.innerHTML = `
+      <span class="page-label">Page ${pageIndex + 1}</span>
+      <select class="page-select" data-page-index="${pageIndex}">${templateOptionsHtml(templateId)}</select>
+    `;
+    head.querySelector('select').addEventListener('change', async (e) => {
+      await setPageTemplate(album, layouts, pageIndex, e.target.value);
+      renderMain();
+    });
+
+    const page = document.createElement('div');
+    page.className = 'page';
+    page.style.gridTemplateColumns = `repeat(${template.cols}, 1fr)`;
+    page.style.gridTemplateRows = `repeat(${template.rows}, 1fr)`;
+
+    template.slots.forEach(([c0,c1,r0,r1], slotIdx) => {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.style.gridColumn = `${c0} / ${c1}`;
+      cell.style.gridRow = `${r0} / ${r1}`;
+      const photo = slice[slotIdx];
+      if(photo){
+        cell.draggable = true;
+        cell.dataset.photoId = photo.id;
+        cell.innerHTML = `<img src="${photo.thumb}" alt=""><button class="rm">✕</button>`;
+        cell.addEventListener('dragstart', () => { dragPhotoId = photo.id; cell.classList.add('dragging'); });
+        cell.addEventListener('dragend', () => cell.classList.remove('dragging'));
+        cell.addEventListener('dragover', (e) => { e.preventDefault(); cell.classList.add('drag-over'); });
+        cell.addEventListener('dragleave', () => cell.classList.remove('drag-over'));
+        cell.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          cell.classList.remove('drag-over');
+          if(dragPhotoId && dragPhotoId !== photo.id){
+            await swapPhotoOrder(album.id, dragPhotoId, photo.id);
+            renderMain();
+          }
+        });
+        cell.querySelector('.rm').addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await deletePhoto(photo.id);
+          toast('Photo supprimée');
+          renderMain();
+          renderAlbumList();
+        });
+      }
+      page.appendChild(cell);
+    });
+
+    block.appendChild(head);
+    block.appendChild(page);
+    pagesEl.appendChild(block);
+  });
+}
+
+// Changing one page's template changes how many slots it holds, which
+// shifts every following page. We persist the explicit choice for this page
+// (and every page before it, so their layouts don't silently drift) and let
+// computeEffectiveLayouts regenerate whatever comes after with the default.
+async function setPageTemplate(album, currentLayouts, pageIndex, newTemplateId){
+  const kept = currentLayouts.slice(0, pageIndex);
+  kept.push(newTemplateId);
+  album.pageLayouts = kept;
+  await updateAlbum(album);
+}
+
+async function swapPhotoOrder(albumId, draggedId, targetId){
+  const photos = await listPhotos(albumId);
+  const fromIdx = photos.findIndex(p => p.id === draggedId);
+  const toIdx = photos.findIndex(p => p.id === targetId);
+  if(fromIdx === -1 || toIdx === -1) return;
+  const [moved] = photos.splice(fromIdx, 1);
+  photos.splice(toIdx, 0, moved);
+  await reorderPhotos(photos);
+}
+
+/* ---------- Adding photos ---------- */
+async function handleFiles(fileList){
+  const files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
+  if(files.length === 0) return;
+  toast(`Ajout de ${files.length} photo${files.length>1?'s':''}…`);
+
+  const newPhotos = [];
+  for(const file of files){
+    try{
+      const [thumb, takenAt] = await Promise.all([makeThumbnail(file), getPhotoDate(file)]);
+      newPhotos.push({
+        id: crypto.randomUUID(),
+        albumId: currentAlbumId,
+        blob: file,
+        thumb,
+        takenAt,
+        name: file.name
+      });
+    }catch(err){
+      console.error('Échec import', file.name, err);
+    }
+  }
+
+  // Merge new photos into the existing order, sorted by capture date —
+  // this is what places them "à la bonne page" automatically, like Cheerz.
+  // A manual drag afterwards is a free override of this order, per photo.
+  const existing = await listPhotos(currentAlbumId);
+  const merged = [...existing, ...newPhotos].sort((a,b) => a.takenAt - b.takenAt);
+
+  for(const p of newPhotos) await addPhoto(p);
+  await reorderPhotos(merged);
+
+  toast('Photos ajoutées, triées par date de prise de vue');
+  renderMain();
+  renderAlbumList();
+}
+
+document.getElementById('fileInput').addEventListener('change', (e) => {
+  handleFiles(e.target.files);
+  e.target.value = '';
+});
+
+/* ---------- PDF export ---------- */
+const PAGE_DIMS = { // mm
+  a4: {w: 210, h: 297},
+  carre: {w: 210, h: 210}
+};
+// Converts a template's grid-line slot coordinates into millimetre rects
+// on the physical page, honoring the same margin/gutter used on screen.
+function slotsToRects(template, pageW, pageH, margin, gutter){
+  const unitW = (pageW - margin*2 - gutter*(template.cols-1)) / template.cols;
+  const unitH = (pageH - margin*2 - gutter*(template.rows-1)) / template.rows;
+  return template.slots.map(([c0,c1,r0,r1]) => ({
+    x: margin + (c0-1) * (unitW + gutter),
+    y: margin + (r0-1) * (unitH + gutter),
+    w: (c1-c0) * unitW + (c1-c0-1) * gutter,
+    h: (r1-r0) * unitH + (r1-r0-1) * gutter
+  }));
+}
+
+async function exportAlbumToPDF(album){
+  const photos = await listPhotos(album.id);
+  if(photos.length === 0) return;
+  toast('Génération du PDF…');
+  const dims = PAGE_DIMS[album.format];
+  const layouts = computeEffectiveLayouts(album, photos.length);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: dims.w > dims.h ? 'landscape' : 'portrait', unit: 'mm', format: [dims.w, dims.h] });
+  const margin = 8, gutter = 5;
+
+  let cursor = 0;
+  for(let p = 0; p < layouts.length; p++){
+    if(p > 0) doc.addPage([dims.w, dims.h]);
+    const template = TEMPLATES[layouts[p]];
+    const rects = slotsToRects(template, dims.w, dims.h, margin, gutter);
+    const slice = photos.slice(cursor, cursor + template.slots.length);
+    cursor += template.slots.length;
+
+    for(let i = 0; i < slice.length; i++){
+      const photo = slice[i];
+      const r = rects[i];
+      try{
+        const { dataUrl } = await makePrintImage(photo.blob);
+        doc.addImage(dataUrl, 'JPEG', r.x, r.y, r.w, r.h, undefined, 'FAST');
+      }catch(err){
+        console.error('Image ignorée dans le PDF', photo.name, err);
+      }
+    }
+  }
+
+  doc.save(`${album.name.replace(/[^a-z0-9]+/gi,'_')}.pdf`);
+  toast('PDF téléchargé');
+}
+
+/* ---------- New album modal ---------- */
+const modalBackdrop = document.getElementById('modalBackdrop');
+document.getElementById('btnNewAlbum').addEventListener('click', () => {
+  modalBackdrop.classList.add('show');
+  document.getElementById('newAlbumName').value = '';
+  document.getElementById('newAlbumName').focus();
+});
+document.getElementById('cancelNewAlbum').addEventListener('click', () => modalBackdrop.classList.remove('show'));
+modalBackdrop.addEventListener('click', (e) => { if(e.target === modalBackdrop) modalBackdrop.classList.remove('show'); });
+document.getElementById('confirmNewAlbum').addEventListener('click', createNewAlbum);
+document.getElementById('newAlbumName').addEventListener('keydown', (e) => { if(e.key === 'Enter') createNewAlbum(); });
+
+async function createNewAlbum(){
+  const name = document.getElementById('newAlbumName').value.trim();
+  if(!name) return;
+  const album = await createAlbum(name);
+  currentAlbumId = album.id;
+  modalBackdrop.classList.remove('show');
+  await renderAlbumList();
+  await renderMain();
+}
+
+/* ---------- Mobile sidebar toggle ---------- */
+document.getElementById('menuBtn').addEventListener('click', () => {
+  document.getElementById('sidebar').classList.toggle('open');
+});
+
+/* ---------- Init ---------- */
+(async function init(){
+  fillSprockets();
+  await openDB();
+  await renderAlbumList();
+  await renderMain();
+})();
+</script>
+</body>
+</html>
