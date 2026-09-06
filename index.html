@@ -146,7 +146,8 @@
     display:flex;align-items:center;justify-content:center;
     padding:6px 6px 14px 6px; box-shadow:0 3px 8px rgba(44,66,87,0.18);
   }
-  .cell img{width:100%;height:100%;object-fit:cover;display:block;border-radius:1px;}
+  .cell img{width:100%;height:100%;object-fit:cover;display:block;border-radius:1px;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;-webkit-user-drag:none;}
+  .cell[data-photo-id]{touch-action:none;}
   .cell-empty{background:rgba(44,66,87,0.06);box-shadow:none;padding:0;}
   .cell.dragging{opacity:.35;}
   .cell.drag-over{outline:2px solid var(--amber-dim);outline-offset:-2px;}
@@ -657,7 +658,47 @@ async function makePrintImage(blob, maxDim = 1800){
 
 /* ---------- State ---------- */
 let currentAlbumId = null;
-let dragPhotoId = null;
+
+/* ---------- Photo drag-to-swap (pointer events — works with touch AND mouse) ----------
+   Native HTML5 drag-and-drop (draggable="true") only fires on desktop mice;
+   on a phone, a long-press on an <img> instead opens the browser's own
+   "save/share image" menu. Pointer Events unify touch and mouse, so this
+   implements dragging manually: track the pointer, find whichever .cell is
+   underneath it, and on release swap the two photos' positions in the
+   album's order — the same swapPhotoOrder() used everywhere else. */
+let dragState = null; // { photoId, sourceCell }
+
+function attachDragHandlers(cell, photoId){
+  cell.addEventListener('pointerdown', (e) => {
+    if(e.target.closest('.rm')) return;
+    dragState = { photoId, sourceCell: cell };
+    cell.classList.add('dragging');
+  });
+}
+
+document.addEventListener('pointermove', (e) => {
+  if(!dragState) return;
+  e.preventDefault();
+  document.querySelectorAll('.cell.drag-over').forEach(c => c.classList.remove('drag-over'));
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const targetCell = el && el.closest('.cell');
+  if(targetCell && targetCell !== dragState.sourceCell && targetCell.dataset.photoId){
+    targetCell.classList.add('drag-over');
+  }
+}, { passive: false });
+
+document.addEventListener('pointerup', async (e) => {
+  if(!dragState) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const targetCell = el && el.closest('.cell');
+  document.querySelectorAll('.cell.dragging, .cell.drag-over').forEach(c => c.classList.remove('dragging', 'drag-over'));
+  const draggedId = dragState.photoId;
+  dragState = null;
+  if(targetCell && targetCell.dataset.photoId && targetCell.dataset.photoId !== draggedId){
+    await swapPhotoOrder(currentAlbumId, draggedId, targetCell.dataset.photoId);
+    renderMain();
+  }
+});
 
 /* ---------- UI: toast ---------- */
 function toast(msg){
@@ -858,21 +899,9 @@ function renderPages(photos, album, layouts){
       const photo = assigned[slotIdx];
       if(!photo) cell.classList.add('cell-empty');
       if(photo){
-        cell.draggable = true;
         cell.dataset.photoId = photo.id;
         cell.innerHTML = `<img src="${photo.thumb}" alt=""><button class="rm">✕</button>`;
-        cell.addEventListener('dragstart', () => { dragPhotoId = photo.id; cell.classList.add('dragging'); });
-        cell.addEventListener('dragend', () => cell.classList.remove('dragging'));
-        cell.addEventListener('dragover', (e) => { e.preventDefault(); cell.classList.add('drag-over'); });
-        cell.addEventListener('dragleave', () => cell.classList.remove('drag-over'));
-        cell.addEventListener('drop', async (e) => {
-          e.preventDefault();
-          cell.classList.remove('drag-over');
-          if(dragPhotoId && dragPhotoId !== photo.id){
-            await swapPhotoOrder(album.id, dragPhotoId, photo.id);
-            renderMain();
-          }
-        });
+        attachDragHandlers(cell, photo.id);
         cell.querySelector('.rm').addEventListener('click', async (e) => {
           e.stopPropagation();
           await deletePhoto(photo.id);
