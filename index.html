@@ -413,44 +413,6 @@ const DEFAULT_TEMPLATE = '4a';
 // same grid every page ("panaché" of 2 to 6+ photos, as requested).
 const DEFAULT_ROTATION = ['3a','2a','4b','5a','2b','6a','4a','3b'];
 
-function templateOptionsHtml(selected){
-  const groups = {};
-  Object.entries(TEMPLATES).forEach(([id, t]) => {
-    const count = t.slots.length;
-    (groups[count] = groups[count] || []).push([id, t]);
-  });
-  return Object.keys(groups).sort((a,b)=>a-b).map(count =>
-    groups[count].map(([id, t]) =>
-      `<option value="${id}" ${id===selected?'selected':''}>${t.label}</option>`
-    ).join('')
-  ).join('');
-}
-
-// Given the flat photo order and the album's explicit per-page template
-// choices, return one template id per page. Page 1 is always a fixed
-// "cover" page (album title + the first photo chronologically); the rest
-// use the explicit per-page choices, extended with a varied rotation for
-// any photos not yet covered.
-function computeEffectiveLayouts(album, totalPhotos){
-  if(totalPhotos === 0) return ['cover'];
-  const layouts = ['cover'];
-  let covered = 1; // the cover page consumes the first photo
-  const chosen = album.pageLayouts || [];
-  for(const tid of chosen){
-    if(covered >= totalPhotos) break;
-    layouts.push(tid);
-    covered += TEMPLATES[tid].slots.length;
-  }
-  let rot = 0;
-  while(covered < totalPhotos){
-    const tid = DEFAULT_ROTATION[rot % DEFAULT_ROTATION.length];
-    layouts.push(tid);
-    covered += TEMPLATES[tid].slots.length;
-    rot++;
-  }
-  return layouts;
-}
-
 /* ---------- Photo orientation (portrait vs. landscape) ----------
    Detected from the thumbnail's actual pixel dimensions (not EXIF, which
    can lie about orientation after rotation) so photo-to-slot matching works
@@ -475,6 +437,20 @@ async function annotateOrientations(photos){
   return photos.map((p, i) => ({ ...p, orientation: os[i] }));
 }
 
+
+function templateOptionsHtml(selected){
+  const groups = {};
+  Object.entries(TEMPLATES).forEach(([id, t]) => {
+    const count = t.slots.length;
+    (groups[count] = groups[count] || []).push([id, t]);
+  });
+  return Object.keys(groups).sort((a,b)=>a-b).map(count =>
+    groups[count].map(([id, t]) =>
+      `<option value="${id}" ${id===selected?'selected':''}>${t.label}</option>`
+    ).join('')
+  ).join('');
+}
+
 function pageAspectFor(format){
   const d = PAGE_DIMS[format];
   return d.w / d.h;
@@ -489,6 +465,26 @@ function slotShape(template, slot, pageAspect){
   const physW = wFrac * pageAspect;
   const physH = hFrac;
   return physW >= physH ? 'landscape' : 'portrait';
+}
+function templateShapeCounts(template, pageAspect){
+  let portrait = 0, landscape = 0;
+  template.slots.forEach(slot => {
+    if(slotShape(template, slot, pageAspect) === 'portrait') portrait++; else landscape++;
+  });
+  return { portrait, landscape };
+}
+// How well a template's slot shapes fit the next photos in line, as a 0–1
+// fraction of slots that would get their preferred orientation. Used to pick
+// which layout to use next, instead of only reshuffling within a fixed one.
+function scoreTemplateFit(template, upcomingPhotos, pageAspect){
+  const n = template.slots.length;
+  const slice = upcomingPhotos.slice(0, n);
+  if(slice.length === 0) return -1;
+  const portraitAvail = slice.filter(p => p.orientation === 'portrait').length;
+  const landscapeAvail = slice.length - portraitAvail;
+  const { portrait: pNeed, landscape: lNeed } = templateShapeCounts(template, pageAspect);
+  const matched = Math.min(pNeed, portraitAvail) + Math.min(lNeed, landscapeAvail);
+  return matched / n;
 }
 // Matches photos to a page's slots by shape (portrait photos into portrait
 // slots, landscape into landscape) while preserving each orientation's own
@@ -509,6 +505,43 @@ function assignPhotosToSlots(slicePhotos, template, pageAspect){
     }
     return undefined;
   });
+}
+
+// Given the photo order (with orientation already detected) and the album's
+// explicit per-page template choices, return one template id per page. Page
+// 1 is always a fixed "cover" page (album title + the first photo
+// chronologically). Pages after that use the explicit per-page choices where
+// set; any photos not yet covered get a template picked automatically —
+// scored against the upcoming photos' portrait/landscape mix rather than
+// just cycling blindly, so a run of portrait photos gets a portrait-heavy
+// layout instead of being force-fit into landscape slots.
+function computeEffectiveLayouts(album, photos){
+  const totalPhotos = photos.length;
+  if(totalPhotos === 0) return ['cover'];
+  const layouts = ['cover'];
+  let covered = 1; // the cover page consumes the first photo
+  const chosen = album.pageLayouts || [];
+  for(const tid of chosen){
+    if(covered >= totalPhotos) break;
+    layouts.push(tid);
+    covered += TEMPLATES[tid].slots.length;
+  }
+  const pageAspect = pageAspectFor(album.format);
+  let lastPicked = null;
+  while(covered < totalPhotos){
+    const remaining = photos.slice(covered);
+    let bestId = null, bestScore = -1;
+    for(const tid of DEFAULT_ROTATION){
+      if(tid === lastPicked) continue; // avoid the exact same layout twice in a row
+      const score = scoreTemplateFit(TEMPLATES[tid], remaining, pageAspect);
+      if(score > bestScore){ bestScore = score; bestId = tid; }
+    }
+    if(bestId === null) bestId = DEFAULT_ROTATION.find(t => t !== lastPicked) || DEFAULT_ROTATION[0];
+    layouts.push(bestId);
+    covered += TEMPLATES[bestId].slots.length;
+    lastPicked = bestId;
+  }
+  return layouts;
 }
 
 /* ---------- EXIF-lite date reader ----------
@@ -707,7 +740,7 @@ async function renderMain(){
   if(!album){ currentAlbumId = null; return renderMain(); }
   const photos = await listPhotos(album.id);
   const annotated = await annotateOrientations(photos);
-  const layouts = computeEffectiveLayouts(album, annotated.length);
+  const layouts = computeEffectiveLayouts(album, annotated);
 
   main.innerHTML = `
     <div class="toolbar">
@@ -967,7 +1000,7 @@ async function exportAlbumToPDF(album){
   const photos = await annotateOrientations(rawPhotos);
   const dims = PAGE_DIMS[album.format];
   const pageAspect = dims.w / dims.h;
-  const layouts = computeEffectiveLayouts(album, photos.length);
+  const layouts = computeEffectiveLayouts(album, photos);
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: dims.w > dims.h ? 'landscape' : 'portrait', unit: 'mm', format: [dims.w, dims.h] });
   const margin = 8, gutter = 5;
