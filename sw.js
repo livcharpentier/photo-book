@@ -26,10 +26,20 @@ self.addEventListener('fetch', (event) => {
         const formData = await event.request.formData();
         const files = formData.getAll('photos');
         const db = await openInboxDB();
+        // Store raw bytes (ArrayBuffer) rather than the File/Blob object
+        // itself — ArrayBuffers survive the trip from this service worker
+        // context to the page's IndexedDB read far more reliably than a
+        // live Blob reference does.
+        const records = await Promise.all(files.map(async f => ({
+          buf: await f.arrayBuffer(),
+          type: f.type || 'image/jpeg',
+          name: f.name || 'photo.jpg',
+          addedAt: Date.now()
+        })));
         await new Promise((resolve, reject) => {
           const tx = db.transaction('incoming', 'readwrite');
           const store = tx.objectStore('incoming');
-          files.forEach(f => store.add({ blob: f, name: f.name, addedAt: Date.now() }));
+          records.forEach(r => store.add(r));
           tx.oncomplete = resolve;
           tx.onerror = reject;
         });
