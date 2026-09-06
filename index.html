@@ -120,35 +120,30 @@
   .page{
     background:var(--paper);color:var(--ink);border-radius:2px;
     box-shadow:0 10px 28px var(--paper-shadow);
-    padding:14px;display:grid;gap:10px;
+    padding:0;display:grid;gap:2mm;
     aspect-ratio: var(--page-ratio, 210/297);
     max-width:520px;
-    background-image:
-      radial-gradient(rgba(44,66,87,0.05) 1px, transparent 1px),
-      radial-gradient(rgba(44,66,87,0.035) 1px, transparent 1px);
-    background-size: 5px 5px, 7px 7px;
-    background-position: 0 0, 3px 4px;
+    overflow:hidden;
   }
   .fmt-carre .page{ --page-ratio: 1/1; }
 
-  .cover-page{ padding:18px; }
+  .cover-page{ position:relative; padding:0; }
   .cover-title{
+    position:absolute; left:0; right:0; bottom:0;
     font-family:'Baloo 2',sans-serif; font-weight:700; text-align:center;
-    color:var(--ink); font-size:clamp(20px, 4vw, 32px); line-height:1.2;
+    color:#fff; font-size:clamp(16px, 4vw, 28px); line-height:1.2;
+    padding:14px 10px; background:linear-gradient(transparent, rgba(44,66,87,0.82) 55%);
   }
 
-  /* Polaroid-style framing: a thick white card around each photo, like a
-     printed snapshot pinned to a scrapbook page. */
-  /* Polaroid-style framing: a thick white card around each photo, like a
-     printed snapshot pinned to a scrapbook page. */
+  /* Clean, edge-to-edge photos with just a thin gap between them — no
+     individual white border, photo panels bleed to the page edge. */
   .cell{
-    position:relative;background:#fff;border-radius:1px;overflow:hidden;
+    position:relative;overflow:hidden;
     display:flex;align-items:center;justify-content:center;
-    padding:6px 6px 14px 6px; box-shadow:0 3px 8px rgba(44,66,87,0.18);
   }
-  .cell img{width:100%;height:100%;object-fit:cover;display:block;border-radius:1px;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;-webkit-user-drag:none;}
+  .cell img{width:100%;height:100%;object-fit:cover;display:block;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;-webkit-user-drag:none;}
   .cell[data-photo-id]{touch-action:none;}
-  .cell-empty{background:rgba(44,66,87,0.06);box-shadow:none;padding:0;}
+  .cell-empty{background:rgba(44,66,87,0.06);}
   .cell.dragging{opacity:.35;}
   .cell.drag-over{outline:2px solid var(--amber-dim);outline-offset:-2px;}
   .cell .rm{
@@ -847,13 +842,11 @@ function renderPages(photos, album, layouts){
 
       const page = document.createElement('div');
       page.className = 'page cover-page';
-      page.style.display = 'flex';
-      page.style.flexDirection = 'column';
-      page.style.gap = '10px';
 
       const cell = document.createElement('div');
       cell.className = 'cell';
-      cell.style.flex = '1';
+      cell.style.position = 'absolute';
+      cell.style.inset = '0';
       if(coverPhoto){
         cell.innerHTML = `<img src="${coverPhoto.thumb}" alt="">`;
       }
@@ -1032,7 +1025,7 @@ async function exportAlbumToPDF(album){
   const layouts = computeEffectiveLayouts(album, photos);
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: dims.w > dims.h ? 'landscape' : 'portrait', unit: 'mm', format: [dims.w, dims.h] });
-  const margin = 8, gutter = 5;
+  const margin = 0, gutter = 3;
 
   let cursor = 0;
   for(let p = 0; p < layouts.length; p++){
@@ -1041,17 +1034,21 @@ async function exportAlbumToPDF(album){
     if(layouts[p] === 'cover'){
       const photo = photos[cursor];
       cursor += 1;
-      const titleH = 22;
       if(photo){
         try{
           const blob = await downloadPhotoBlob(photo);
           const { dataUrl } = await makePrintImage(blob);
-          doc.addImage(dataUrl, 'JPEG', margin, margin, dims.w - margin*2, dims.h - margin*2 - titleH, undefined, 'FAST');
+          doc.addImage(dataUrl, 'JPEG', 0, 0, dims.w, dims.h, undefined, 'FAST');
         }catch(err){ console.error('Image de couverture ignorée', err); }
       }
+      const bandH = 26;
+      doc.setFillColor(44, 66, 87);
+      doc.rect(0, dims.h - bandH, dims.w, bandH, 'F');
+      doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(22);
-      doc.text(album.name, dims.w/2, dims.h - margin - titleH/2 + 4, { align: 'center' });
+      doc.setFontSize(20);
+      doc.text(album.name, dims.w/2, dims.h - bandH/2 + 4, { align: 'center' });
+      doc.setTextColor(0, 0, 0);
       continue;
     }
 
