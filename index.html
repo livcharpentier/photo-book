@@ -347,9 +347,9 @@ async function listPhotos(albumId){
 async function addPhoto(photo){
   const ext = (photo.name.split('.').pop() || 'jpg').toLowerCase();
   const storagePath = `${photo.albumId}/${photo.id}.${ext}`;
-  const { error: uploadError } = await supabaseClient.storage.from('photos').upload(storagePath, photo.blob);
+  const { error: uploadError } = await supabaseClient.storage.from('photos').upload(storagePath, photo.blob, { upsert: true });
   if(uploadError) throw uploadError;
-  const { error } = await supabaseClient.from('photos').insert({
+  const { error } = await supabaseClient.from('photos').upsert({
     id: photo.id, album_id: photo.albumId, storage_path: storagePath,
     thumb: photo.thumb, taken_at: photo.takenAt, order_index: photo.order, name: photo.name
   });
@@ -1018,7 +1018,13 @@ async function handleFiles(fileList){
   const succeeded = [];
   for(const p of prepared){
     try{
-      await addPhoto(p);
+      try{
+        await addPhoto(p);
+      }catch(firstErr){
+        // Transient network hiccups are common on mobile during a big batch —
+        // one retry before really giving up on this photo.
+        await addPhoto(p);
+      }
       succeeded.push(p);
       okCount++;
     }catch(err){
