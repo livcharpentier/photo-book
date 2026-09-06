@@ -763,11 +763,11 @@ async function handleFiles(fileList){
   if(files.length === 0) return;
   toast(`Ajout de ${files.length} photo${files.length>1?'s':''}…`);
 
-  const newPhotos = [];
+  const prepared = [];
   for(const file of files){
     try{
       const [thumb, takenAt] = await Promise.all([makeThumbnail(file), getPhotoDate(file)]);
-      newPhotos.push({
+      prepared.push({
         id: crypto.randomUUID(),
         albumId: currentAlbumId,
         blob: file,
@@ -776,20 +776,39 @@ async function handleFiles(fileList){
         name: file.name
       });
     }catch(err){
-      console.error('Échec import', file.name, err);
+      console.error('Échec de préparation', file.name, err);
     }
   }
 
-  // Merge new photos into the existing order, sorted by capture date —
-  // this is what places them "à la bonne page" automatically, like Cheerz.
-  // A manual drag afterwards is a free override of this order, per photo.
+  // Merge into the existing order, sorted by capture date — this is what
+  // places new photos "à la bonne page" automatically, like Cheerz. A
+  // manual drag afterwards is a free override of this order, per photo.
   const existing = await listPhotos(currentAlbumId);
-  const merged = [...existing, ...newPhotos].sort((a,b) => a.takenAt - b.takenAt);
+  if(prepared.length === 0){
+    toast('Échec : impossible de lire ces photos');
+    return;
+  }
 
-  for(const p of newPhotos) await addPhoto(p);
-  await reorderPhotos(merged);
+  // Each photo is uploaded independently — one failure (réseau, format...)
+  // must not silently discard every other photo in the same batch.
+  let okCount = 0, failCount = 0;
+  const succeeded = [];
+  for(const p of prepared){
+    try{
+      await addPhoto(p);
+      succeeded.push(p);
+      okCount++;
+    }catch(err){
+      console.error('Échec envoi', p.name, err);
+      failCount++;
+    }
+  }
+  const finalOrder = existing.concat(succeeded).sort((a,b) => a.takenAt - b.takenAt);
+  if(finalOrder.length) await reorderPhotos(finalOrder);
 
-  toast('Photos ajoutées, triées par date de prise de vue');
+  toast(failCount === 0
+    ? `${okCount} photo${okCount>1?'s':''} ajoutée${okCount>1?'s':''}`
+    : `${okCount} ajoutée${okCount>1?'s':''}, ${failCount} échec${failCount>1?'s':''}`);
   renderMain();
   renderAlbumList();
 }
