@@ -531,29 +531,36 @@ function assignPhotosToSlots(slicePhotos, template, pageAspect){
 function computeEffectiveLayouts(album, photos){
   const totalPhotos = photos.length;
   if(totalPhotos === 0) return ['cover'];
+  if(totalPhotos === 1) return ['cover'];
   const layouts = ['cover'];
   let covered = 1; // the cover page consumes the first photo
+  const middleTotal = totalPhotos - 1; // reserve the very last photo for its own closing page
   const chosen = album.pageLayouts || [];
   for(const tid of chosen){
-    if(covered >= totalPhotos) break;
+    if(covered >= middleTotal) break;
     layouts.push(tid);
     covered += TEMPLATES[tid].slots.length;
   }
   const pageAspect = pageAspectFor(album.format);
   let lastPicked = null;
-  while(covered < totalPhotos){
-    const remaining = photos.slice(covered);
+  while(covered < middleTotal){
+    const budget = middleTotal - covered;
+    if(budget <= 1) break; // leave this odd one out — the closing page below absorbs it
+    const remaining = photos.slice(covered, middleTotal);
+    let candidates = DEFAULT_ROTATION.filter(tid => TEMPLATES[tid].slots.length <= budget && tid !== lastPicked);
+    if(candidates.length === 0) candidates = DEFAULT_ROTATION.filter(tid => TEMPLATES[tid].slots.length <= budget);
     let bestId = null, bestScore = -1;
-    for(const tid of DEFAULT_ROTATION){
-      if(tid === lastPicked) continue; // avoid the exact same layout twice in a row
+    for(const tid of candidates){
       const score = scoreTemplateFit(TEMPLATES[tid], remaining, pageAspect);
       if(score > bestScore){ bestScore = score; bestId = tid; }
     }
-    if(bestId === null) bestId = DEFAULT_ROTATION.find(t => t !== lastPicked) || DEFAULT_ROTATION[0];
+    if(bestId === null) break;
     layouts.push(bestId);
     covered += TEMPLATES[bestId].slots.length;
     lastPicked = bestId;
   }
+  const leftover = totalPhotos - covered; // normally exactly 1 (the reserved last photo); occasionally 2
+  if(leftover > 0) layouts.push(leftover >= 2 ? '2a' : '1a');
   return layouts;
 }
 
