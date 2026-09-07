@@ -396,24 +396,35 @@ const TEMPLATES = {
     slots:[[1,2,1,2],[2,3,1,2],[1,2,2,3],[2,3,2,3]] },
   '4b': { label: '4 photos — grande + 3', cols:3, rows:3,
     slots:[[1,3,1,4],[3,4,1,2],[3,4,2,3],[3,4,3,4]] },
+  '4c': { label: '4 photos — bandeau', cols:4, rows:1,
+    slots:[[1,2,1,2],[2,3,1,2],[3,4,1,2],[4,5,1,2]] },
 
   '5a': { label: '5 photos — grande + 4', cols:3, rows:2,
     slots:[[1,2,1,3],[2,3,1,2],[3,4,1,2],[2,3,2,3],[3,4,2,3]] },
+  '5b': { label: '5 photos — sandwich', cols:2, rows:3,
+    slots:[[1,2,1,2],[2,3,1,2],[1,3,2,3],[1,2,3,4],[2,3,3,4]] },
 
   '6a': { label: '6 photos — grille égale', cols:3, rows:2,
     slots:[[1,2,1,2],[2,3,1,2],[3,4,1,2],[1,2,2,3],[2,3,2,3],[3,4,2,3]] },
+  '6b': { label: '6 photos — deux grandes + 4', cols:4, rows:3,
+    slots:[[1,3,1,3],[3,5,1,3],[1,2,3,4],[2,3,3,4],[3,4,3,4],[4,5,3,4]] },
 
   '7a': { label: '7 photos — mosaïque', cols:4, rows:3,
     slots:[[1,3,1,3],[3,4,1,2],[4,5,1,2],[3,4,2,3],[4,5,2,3],[1,3,3,4],[3,5,3,4]] },
+  '7b': { label: '7 photos — bandeau + grille', cols:3, rows:3,
+    slots:[[1,4,1,2],[1,2,2,3],[2,3,2,3],[3,4,2,3],[1,2,3,4],[2,3,3,4],[3,4,3,4]] },
 
   '8a': { label: '8 photos — grille égale', cols:4, rows:2,
-    slots:[[1,2,1,2],[2,3,1,2],[3,4,1,2],[4,5,1,2],[1,2,2,3],[2,3,2,3],[3,4,2,3],[4,5,2,3]] }
+    slots:[[1,2,1,2],[2,3,1,2],[3,4,1,2],[4,5,1,2],[1,2,2,3],[2,3,2,3],[3,4,2,3],[4,5,2,3]] },
+  '8b': { label: '8 photos — mosaïque + bandeau', cols:4, rows:3,
+    slots:[[1,3,1,2],[3,4,1,2],[4,5,1,2],[1,2,2,3],[2,3,2,3],[3,4,2,3],[4,5,2,3],[1,5,3,4]] }
 };
 const DEFAULT_TEMPLATE = '4a';
 // Auto-variety rotation for pages the person hasn't explicitly customized —
 // cycles through different photo counts/structures instead of repeating the
-// same grid every page ("panaché" of 2 to 6+ photos, as requested).
-const DEFAULT_ROTATION = ['3a','2a','4b','5a','2b','6a','4a','3b'];
+// same grid every page ("panaché" of 2 to 8 photos, with several distinct
+// structures per count so the rotation itself doesn't feel repetitive).
+const DEFAULT_ROTATION = ['3a','2a','4b','5a','2b','6b','4c','3b','7b','5b','8b','6a','7a','4a'];
 
 /* ---------- Photo orientation (portrait vs. landscape) ----------
    Detected from the thumbnail's actual pixel dimensions (not EXIF, which
