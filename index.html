@@ -114,7 +114,10 @@
   .drop-zone strong{color:var(--amber);font-weight:500;}
 
   /* Pages — each rendered as a literal paper sheet */
-  .pages{display:flex;flex-direction:column;gap:36px;}
+  .pages{display:flex;flex-direction:column;gap:36px;align-items:center;}
+  .spread{display:flex;gap:0;align-items:flex-start;max-width:1040px;width:100%;}
+  .spread .page-block{flex:1;min-width:0;}
+  .spread-divider{width:2px;align-self:stretch;background:var(--line);flex-shrink:0;margin:32px 6px 0;}
   .page-block{display:flex;flex-direction:column;gap:8px;}
   .page-label{font-size:12px;color:var(--cream-dim);letter-spacing:.03em;}
   .page{
@@ -885,6 +888,7 @@ function renderPages(photos, album, layouts){
   selectedPhotoId = null; // DOM is being rebuilt — any pending tap-selection no longer has a visible target
   const pageAspect = pageAspectFor(album.format);
   let cursor = 0;
+  const blocks = []; // collected first, then grouped into two-page spreads below
 
   layouts.forEach((templateId, pageIndex) => {
     const block = document.createElement('div');
@@ -916,7 +920,7 @@ function renderPages(photos, album, layouts){
       page.appendChild(titleEl);
       block.appendChild(head);
       block.appendChild(page);
-      pagesEl.appendChild(block);
+      blocks.push(block);
       return;
     }
 
@@ -970,8 +974,33 @@ function renderPages(photos, album, layouts){
 
     block.appendChild(head);
     block.appendChild(page);
-    pagesEl.appendChild(block);
+    blocks.push(block);
   });
+
+  // Group into two-page spreads, like an open book — the cover stays alone,
+  // then pages pair up (2+3, 4+5, ...). An odd page left at the very end
+  // (the closing page) is shown alone too.
+  let i = 0;
+  if(blocks.length > 0){
+    pagesEl.appendChild(blocks[0]); // cover, always alone
+    i = 1;
+  }
+  while(i < blocks.length){
+    if(i + 1 < blocks.length){
+      const spread = document.createElement('div');
+      spread.className = 'spread';
+      spread.appendChild(blocks[i]);
+      const divider = document.createElement('div');
+      divider.className = 'spread-divider';
+      spread.appendChild(divider);
+      spread.appendChild(blocks[i+1]);
+      pagesEl.appendChild(spread);
+      i += 2;
+    }else{
+      pagesEl.appendChild(blocks[i]);
+      i += 1;
+    }
+  }
 }
 
 // Changing one page's template changes how many slots it holds, which
