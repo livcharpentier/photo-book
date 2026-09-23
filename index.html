@@ -139,6 +139,7 @@
     overflow:hidden;
   }
   .fmt-carre .page{ --page-ratio: 1/1; }
+  .fmt-a4paysage .page{ --page-ratio: 297/210; }
 
   .cover-page{ position:relative; padding:0; }
   .cover-title{
@@ -931,6 +932,7 @@ async function renderMain(){
           <label>Format</label>
           <select id="selFormat">
             <option value="a4" ${album.format==='a4'?'selected':''}>A4 portrait</option>
+            <option value="a4paysage" ${album.format==='a4paysage'?'selected':''}>A4 paysage</option>
             <option value="carre" ${album.format==='carre'?'selected':''}>Carré</option>
           </select>
         </div>
@@ -943,7 +945,7 @@ async function renderMain(){
       <strong>Clique ici</strong> ou dépose des photos pour les ajouter à cet album — elles sont classées par date de prise de vue
     </div>
 
-    <div class="pages ${album.format==='carre'?'fmt-carre':''}" id="pagesEl"></div>
+    <div class="pages ${album.format==='carre'?'fmt-carre':(album.format==='a4paysage'?'fmt-a4paysage':'')}" id="pagesEl"></div>
   `;
 
   document.getElementById('selFormat').addEventListener('change', async (e) => {
@@ -1182,6 +1184,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
 /* ---------- PDF export ---------- */
 const PAGE_DIMS = { // mm
   a4: {w: 210, h: 297},
+  a4paysage: {w: 297, h: 210},
   carre: {w: 210, h: 210}
 };
 // Converts a template's grid-line slot coordinates into millimetre rects
