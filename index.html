@@ -248,6 +248,7 @@
       <h1>Mes albums</h1>
     </div>
     <button class="new-album" id="btnNewAlbum">+ Nouvel album</button>
+    <button class="new-album" id="btnSelectMode" style="margin-top:6px;">Sélectionner…</button>
     <div class="album-list" id="albumList"></div>
     <button class="logout-btn" id="logoutBtn">Se déconnecter</button>
   </div>
@@ -790,9 +791,13 @@ function fillSprockets(){
 window.addEventListener('resize', fillSprockets);
 
 /* ---------- Render: album list ---------- */
+let selectMode = false;
+let selectedAlbumIds = new Set();
+
 async function renderAlbumList(){
   const albums = await listAlbums();
   const el = document.getElementById('albumList');
+  document.getElementById('btnSelectMode').textContent = selectMode ? 'Annuler' : 'Sélectionner…';
   if(albums.length === 0){
     el.innerHTML = '<div class="empty-sidebar">Aucun album pour l\'instant. Crée ton premier album pour commencer.</div>';
     return;
@@ -806,7 +811,14 @@ async function renderAlbumList(){
       const photos = await listPhotos(album.id);
       const item = document.createElement('div');
       item.className = 'album-item' + (album.id === currentAlbumId ? ' active' : '');
-      item.innerHTML = `
+      const checked = selectedAlbumIds.has(album.id);
+      item.innerHTML = selectMode ? `
+        <label style="display:flex;align-items:center;gap:8px;overflow:hidden;">
+          <input type="checkbox" class="album-check" ${checked?'checked':''}>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(album.name)}</span>
+        </label>
+        <span class="count">${photos.length}</span>
+      ` : `
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(album.name)}</span>
         <span style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
           <span class="count">${photos.length}</span>
@@ -814,6 +826,20 @@ async function renderAlbumList(){
           <button class="del" title="Supprimer l'album">✕</button>
         </span>
       `;
+      if(selectMode){
+        item.querySelector('.album-check').addEventListener('change', (e) => {
+          if(e.target.checked) selectedAlbumIds.add(album.id); else selectedAlbumIds.delete(album.id);
+          renderAlbumList();
+        });
+        item.addEventListener('click', (e) => {
+          if(e.target.closest('input')) return;
+          const cb = item.querySelector('.album-check');
+          cb.checked = !cb.checked;
+          cb.dispatchEvent(new Event('change'));
+        });
+        el.appendChild(item);
+        continue;
+      }
       item.addEventListener('click', (e) => {
         if(e.target.closest('.del') || e.target.closest('.archive-toggle')) return;
         currentAlbumId = album.id;
@@ -847,6 +873,23 @@ async function renderAlbumList(){
     header.textContent = `Archives (${archived.length})`;
     el.appendChild(header);
     await renderGroup(archived);
+  }
+
+  if(selectMode && selectedAlbumIds.size > 0){
+    const bar = document.createElement('button');
+    bar.className = 'btn btn-amber';
+    bar.style.cssText = 'width:100%;justify-content:center;margin-top:10px;background:var(--danger);';
+    bar.textContent = `Supprimer (${selectedAlbumIds.size})`;
+    bar.addEventListener('click', async () => {
+      if(!confirm(`Supprimer définitivement ${selectedAlbumIds.size} album(s) et toutes leurs photos ?`)) return;
+      for(const id of selectedAlbumIds) await deleteAlbum(id);
+      if(selectedAlbumIds.has(currentAlbumId)) currentAlbumId = null;
+      selectedAlbumIds.clear();
+      selectMode = false;
+      await renderAlbumList();
+      await renderMain();
+    });
+    el.appendChild(bar);
   }
 }
 
@@ -1238,6 +1281,12 @@ async function exportAlbumToPDF(album, mode){
   doc.save(filename);
   toast('PDF téléchargé');
 }
+
+document.getElementById('btnSelectMode').addEventListener('click', () => {
+  selectMode = !selectMode;
+  selectedAlbumIds.clear();
+  renderAlbumList();
+});
 
 /* ---------- New album modal ---------- */
 const modalBackdrop = document.getElementById('modalBackdrop');
