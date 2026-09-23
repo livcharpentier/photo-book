@@ -70,15 +70,25 @@
   .album-item .del{opacity:.55;background:none;color:var(--danger);font-size:16px;padding:2px 4px;}
   .album-item:hover .del{opacity:1;}
   .album-item .del:hover{opacity:1;}
+  .album-item .archive-toggle{opacity:.55;background:none;font-size:13px;padding:2px 4px;}
+  .album-item:hover .archive-toggle{opacity:1;}
+  .album-group-header{
+    font-size:11px;color:var(--cream-dim);text-transform:uppercase;letter-spacing:.04em;
+    margin:14px 0 4px 4px;
+  }
 
   .empty-sidebar{color:var(--cream-dim);font-size:13.5px;line-height:1.5;padding:8px 4px;}
 
   .main{flex:1;padding:36px 44px;overflow-y:auto;}
   .main-empty{
     height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
-    color:var(--cream-dim);gap:10px;text-align:center;
+    color:var(--cream-dim);gap:14px;text-align:center;
   }
   .main-empty h2{color:var(--cream);font-weight:500;}
+  .main-empty-icon{
+    width:88px;height:88px;border-radius:50%;background:var(--bg-soft);
+    display:flex;align-items:center;justify-content:center;font-size:38px;
+  }
 
   .toolbar{
     display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;
@@ -200,7 +210,11 @@
     .sprockets{display:none;}
     .menu-btn{display:flex !important;}
   }
-  .menu-btn{display:none;background:none;color:var(--cream);font-size:22px;padding:4px 8px;}
+  .menu-btn{
+    display:none;background:var(--bg-soft);color:var(--cream);font-size:14px;font-weight:500;
+    padding:10px 16px;border-radius:6px;width:100%;text-align:left;align-items:center;
+    margin-bottom:18px;border:1px solid var(--line);
+  }
 
   .logout-btn{
     margin-top:auto;background:none;color:var(--cream-dim);font-size:12.5px;
@@ -241,7 +255,7 @@
   <div class="sprockets" id="sprockets"></div>
 
   <div class="main">
-    <button class="menu-btn" id="menuBtn">☰</button>
+    <button class="menu-btn" id="menuBtn">☰ Mes albums</button>
     <div id="mainContent"></div>
   </div>
 </div>
@@ -308,7 +322,7 @@ function initSupabaseClient(){
 }
 
 function albumFromRow(row){
-  return { id: row.id, name: row.name, createdAt: row.created_at, format: row.format, pageLayouts: row.page_layouts || [] };
+  return { id: row.id, name: row.name, createdAt: row.created_at, format: row.format, pageLayouts: row.page_layouts || [], archived: !!row.archived };
 }
 function photoFromRow(row){
   return { id: row.id, albumId: row.album_id, storagePath: row.storage_path, thumb: row.thumb, takenAt: row.taken_at, order: row.order_index, name: row.name };
@@ -321,14 +335,14 @@ async function listAlbums(){
 }
 async function createAlbum(name){
   const { data, error } = await supabaseClient.from('albums').insert({
-    name, created_at: Date.now(), format: 'a4', page_layouts: []
+    name, created_at: Date.now(), format: 'a4', page_layouts: [], archived: false
   }).select().single();
   if(error) throw error;
   return albumFromRow(data);
 }
 async function updateAlbum(album){
   const { error } = await supabaseClient.from('albums').update({
-    format: album.format, page_layouts: album.pageLayouts
+    format: album.format, page_layouts: album.pageLayouts, archived: album.archived
   }).eq('id', album.id);
   if(error) throw error;
 }
@@ -784,32 +798,55 @@ async function renderAlbumList(){
     return;
   }
   el.innerHTML = '';
-  for(const album of albums){
-    const photos = await listPhotos(album.id);
-    const item = document.createElement('div');
-    item.className = 'album-item' + (album.id === currentAlbumId ? ' active' : '');
-    item.innerHTML = `
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(album.name)}</span>
-      <span style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-        <span class="count">${photos.length}</span>
-        <button class="del" title="Supprimer l'album">✕</button>
-      </span>
-    `;
-    item.addEventListener('click', (e) => {
-      if(e.target.closest('.del')) return;
-      currentAlbumId = album.id;
-      renderAlbumList();
-      renderMain();
-      document.getElementById('sidebar').classList.remove('open');
-    });
-    item.querySelector('.del').addEventListener('click', async () => {
-      if(!confirm(`Supprimer l'album "${album.name}" et toutes ses photos ?`)) return;
-      await deleteAlbum(album.id);
-      if(currentAlbumId === album.id) currentAlbumId = null;
-      await renderAlbumList();
-      await renderMain();
-    });
-    el.appendChild(item);
+  const active = albums.filter(a => !a.archived);
+  const archived = albums.filter(a => a.archived);
+
+  const renderGroup = async (list) => {
+    for(const album of list){
+      const photos = await listPhotos(album.id);
+      const item = document.createElement('div');
+      item.className = 'album-item' + (album.id === currentAlbumId ? ' active' : '');
+      item.innerHTML = `
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(album.name)}</span>
+        <span style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+          <span class="count">${photos.length}</span>
+          <button class="archive-toggle" title="${album.archived ? 'Remettre en cours' : 'Marquer comme terminé'}">${album.archived ? '↩' : '📦'}</button>
+          <button class="del" title="Supprimer l'album">✕</button>
+        </span>
+      `;
+      item.addEventListener('click', (e) => {
+        if(e.target.closest('.del') || e.target.closest('.archive-toggle')) return;
+        currentAlbumId = album.id;
+        renderAlbumList();
+        renderMain();
+        document.getElementById('sidebar').classList.remove('open');
+      });
+      item.querySelector('.archive-toggle').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        album.archived = !album.archived;
+        await updateAlbum(album);
+        toast(album.archived ? 'Album archivé' : 'Album remis en cours');
+        await renderAlbumList();
+      });
+      item.querySelector('.del').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if(!confirm(`Supprimer l'album "${album.name}" et toutes ses photos ?`)) return;
+        await deleteAlbum(album.id);
+        if(currentAlbumId === album.id) currentAlbumId = null;
+        await renderAlbumList();
+        await renderMain();
+      });
+      el.appendChild(item);
+    }
+  };
+
+  await renderGroup(active);
+  if(archived.length){
+    const header = document.createElement('div');
+    header.className = 'album-group-header';
+    header.textContent = `Archives (${archived.length})`;
+    el.appendChild(header);
+    await renderGroup(archived);
   }
 }
 
@@ -825,9 +862,12 @@ async function renderMain(){
   if(!currentAlbumId){
     main.innerHTML = `
       <div class="main-empty">
+        <div class="main-empty-icon">📷</div>
         <h2>Sélectionne un album</h2>
         <p>Ou crée-en un nouveau pour commencer à ajouter des photos.</p>
+        <button class="btn btn-amber" id="emptyStateNewAlbum">+ Nouvel album</button>
       </div>`;
+    document.getElementById('emptyStateNewAlbum').addEventListener('click', () => document.getElementById('btnNewAlbum').click());
     return;
   }
   const albums = await listAlbums();
@@ -851,7 +891,7 @@ async function renderMain(){
             <option value="carre" ${album.format==='carre'?'selected':''}>Carré</option>
           </select>
         </div>
-        <button class="btn btn-amber" id="btnExport" ${photos.length===0?'disabled':''}>Exporter en PDF</button>
+        <button class="btn btn-amber" id="btnExport" ${photos.length===0?'disabled':''}>Exporter / Partager en PDF</button>
       </div>
     </div>
 
@@ -1169,7 +1209,23 @@ async function exportAlbumToPDF(album){
     }
   }
 
-  doc.save(`${album.name.replace(/[^a-z0-9]+/gi,'_')}.pdf`);
+  const filename = `${album.name.replace(/[^a-z0-9]+/gi,'_')}.pdf`;
+  const pdfBlob = doc.output('blob');
+
+  // Offer the native share sheet (WhatsApp, Mail, etc.) when the browser
+  // supports sharing files — falls back to a plain download otherwise.
+  const file = new File([pdfBlob], filename, { type: 'application/pdf' });
+  if(navigator.canShare && navigator.canShare({ files: [file] })){
+    try{
+      await navigator.share({ files: [file], title: album.name });
+      toast('PDF prêt à partager');
+      return;
+    }catch(err){
+      if(err.name === 'AbortError'){ toast('Partage annulé'); return; }
+      console.error('Partage échoué, téléchargement à la place', err);
+    }
+  }
+  doc.save(filename);
   toast('PDF téléchargé');
 }
 
