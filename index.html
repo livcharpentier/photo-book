@@ -762,6 +762,27 @@ async function makePrintImage(blob, maxDim = 1800){
   canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
   return { dataUrl: canvas.toDataURL('image/jpeg', 0.92), w, h };
 }
+// Center-crops to an exact target aspect ratio (like CSS object-fit: cover)
+// — used only for the cover photo, which is meant to fill its frame edge to
+// edge rather than sit letterboxed like the interior grid photos.
+async function makeCoverImage(blob, targetAspect, maxDim = 1800){
+  const bitmap = await createImageBitmap(blob);
+  const srcAspect = bitmap.width / bitmap.height;
+  let sx = 0, sy = 0, sw = bitmap.width, sh = bitmap.height;
+  if(srcAspect > targetAspect){
+    sw = bitmap.height * targetAspect;
+    sx = (bitmap.width - sw) / 2;
+  }else{
+    sh = bitmap.width / targetAspect;
+    sy = (bitmap.height - sh) / 2;
+  }
+  const scale = Math.min(1, maxDim / Math.max(sw, sh));
+  const w = Math.round(sw * scale), h = Math.round(sh * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(bitmap, sx, sy, sw, sh, 0, 0, w, h);
+  return { dataUrl: canvas.toDataURL('image/jpeg', 0.92) };
+}
 
 /* ---------- State ---------- */
 let currentAlbumId = null;
@@ -1084,13 +1105,21 @@ function renderPages(photos, album, layouts){
       const cell = document.createElement('div');
       cell.className = 'cell';
       cell.style.position = 'absolute';
-      cell.style.inset = '0';
+      const pageDims = PAGE_DIMS[album.format];
+      const coverMargins = bindingMargins(1, album.binding || 'none');
+      cell.style.top = (coverMargins.top / pageDims.h * 100) + '%';
+      cell.style.bottom = (coverMargins.bottom / pageDims.h * 100) + '%';
+      cell.style.left = (coverMargins.left / pageDims.w * 100) + '%';
+      cell.style.right = (coverMargins.right / pageDims.w * 100) + '%';
       if(coverPhoto){
         cell.innerHTML = `<img src="${coverPhoto.thumb}" alt="">`;
       }
       const titleEl = document.createElement('div');
       titleEl.className = 'cover-title';
       titleEl.textContent = album.name;
+      titleEl.style.left = cell.style.left;
+      titleEl.style.right = cell.style.right;
+      titleEl.style.bottom = cell.style.bottom;
 
       page.appendChild(cell);
       page.appendChild(titleEl);
@@ -1353,20 +1382,24 @@ async function exportAlbumToPDF(album, mode){
     if(layouts[p] === 'cover'){
       const photo = photos[cursor];
       cursor += 1;
+      const coverMargins = bindingMargins(1, binding);
+      const cx = coverMargins.left, cy = coverMargins.top;
+      const cw = dims.w - coverMargins.left - coverMargins.right;
+      const ch = dims.h - coverMargins.top - coverMargins.bottom;
       if(photo){
         try{
           const blob = await downloadPhotoBlob(photo);
-          const { dataUrl } = await makePrintImage(blob);
-          doc.addImage(dataUrl, 'JPEG', 0, 0, dims.w, dims.h, undefined, 'FAST');
+          const { dataUrl } = await makeCoverImage(blob, cw / ch);
+          doc.addImage(dataUrl, 'JPEG', cx, cy, cw, ch, undefined, 'FAST');
         }catch(err){ console.error('Image de couverture ignorée', err); }
       }
       const bandH = 26;
       doc.setFillColor(44, 66, 87);
-      doc.rect(0, dims.h - bandH, dims.w, bandH, 'F');
+      doc.rect(cx, cy + ch - bandH, cw, bandH, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(20);
-      doc.text(album.name, dims.w/2, dims.h - bandH/2 + 4, { align: 'center' });
+      doc.text(album.name, dims.w/2, cy + ch - bandH/2 + 4, { align: 'center' });
       doc.setTextColor(0, 0, 0);
       continue;
     }
