@@ -356,7 +356,7 @@ function initSupabaseClient(){
 }
 
 function albumFromRow(row){
-  return { id: row.id, name: row.name, createdAt: row.created_at, format: row.format, pageLayouts: row.page_layouts || [], archived: !!row.archived };
+  return { id: row.id, name: row.name, createdAt: row.created_at, format: row.format, pageLayouts: row.page_layouts || [], archived: !!row.archived, binding: row.binding || 'none' };
 }
 function photoFromRow(row){
   return { id: row.id, albumId: row.album_id, storagePath: row.storage_path, thumb: row.thumb, takenAt: row.taken_at, order: row.order_index, name: row.name };
@@ -369,14 +369,14 @@ async function listAlbums(){
 }
 async function createAlbum(name){
   const { data, error } = await supabaseClient.from('albums').insert({
-    name, created_at: Date.now(), format: 'a4', page_layouts: [], archived: false
+    name, created_at: Date.now(), format: 'a4', page_layouts: [], archived: false, binding: 'none'
   }).select().single();
   if(error) throw error;
   return albumFromRow(data);
 }
 async function updateAlbum(album){
   const { error } = await supabaseClient.from('albums').update({
-    format: album.format, page_layouts: album.pageLayouts, archived: album.archived
+    format: album.format, page_layouts: album.pageLayouts, archived: album.archived, binding: album.binding
   }).eq('id', album.id);
   if(error) throw error;
 }
@@ -1005,6 +1005,14 @@ async function renderMain(){
             <option value="carre" ${album.format==='carre'?'selected':''}>Carré</option>
           </select>
         </div>
+        <div class="field">
+          <label>Reliure</label>
+          <select id="selBinding">
+            <option value="none" ${(album.binding||'none')==='none'?'selected':''}>Aucune (plein cadre)</option>
+            <option value="book" ${album.binding==='book'?'selected':''}>Livre relié (marge alternée)</option>
+            <option value="spiral" ${album.binding==='spiral'?'selected':''}>Spirale (marge fixe à gauche)</option>
+          </select>
+        </div>
         <button class="btn btn-ghost" id="btnAddPage">+ Page</button>
         <button class="btn btn-amber" id="btnExport" ${photos.length===0?'disabled':''}>Partager en PDF</button>
         <button class="btn btn-ghost" id="btnDownload" ${photos.length===0?'disabled':''}>⬇ Télécharger</button>
@@ -1020,6 +1028,11 @@ async function renderMain(){
 
   document.getElementById('selFormat').addEventListener('change', async (e) => {
     album.format = e.target.value;
+    await updateAlbum(album);
+    renderMain();
+  });
+  document.getElementById('selBinding').addEventListener('change', async (e) => {
+    album.binding = e.target.value;
     await updateAlbum(album);
     renderMain();
   });
@@ -1113,6 +1126,14 @@ function renderPages(photos, album, layouts){
     page.className = 'page';
     page.style.gridTemplateColumns = `repeat(${template.cols}, 1fr)`;
     page.style.gridTemplateRows = `repeat(${template.rows}, 1fr)`;
+    // Preview the binding gutter on screen too, so what you see roughly
+    // matches what the exported PDF will look like once bound.
+    const pageDims = PAGE_DIMS[album.format];
+    const bm = bindingMargins(pageIndex + 1, album.binding || 'none');
+    if(bm.left || bm.right){
+      page.style.paddingLeft = (bm.left / pageDims.w * 100) + '%';
+      page.style.paddingRight = (bm.right / pageDims.w * 100) + '%';
+    }
 
     template.slots.forEach(([c0,c1,r0,r1], slotIdx) => {
       const cell = document.createElement('div');
@@ -1277,15 +1298,30 @@ const PAGE_DIMS = { // mm
 };
 // Converts a template's grid-line slot coordinates into millimetre rects
 // on the physical page, honoring the same margin/gutter used on screen.
-function slotsToRects(template, pageW, pageH, margin, gutter){
-  const unitW = (pageW - margin*2 - gutter*(template.cols-1)) / template.cols;
-  const unitH = (pageH - margin*2 - gutter*(template.rows-1)) / template.rows;
+function slotsToRects(template, pageW, pageH, margins, gutter){
+  const { left = 0, right = 0, top = 0, bottom = 0 } = margins;
+  const unitW = (pageW - left - right - gutter*(template.cols-1)) / template.cols;
+  const unitH = (pageH - top - bottom - gutter*(template.rows-1)) / template.rows;
   return template.slots.map(([c0,c1,r0,r1]) => ({
-    x: margin + (c0-1) * (unitW + gutter),
-    y: margin + (r0-1) * (unitH + gutter),
+    x: left + (c0-1) * (unitW + gutter),
+    y: top + (r0-1) * (unitH + gutter),
     w: (c1-c0) * unitW + (c1-c0-1) * gutter,
     h: (r1-r0) * unitH + (r1-r0-1) * gutter
   }));
+}
+const BINDING_GUTTER_MM = 15;
+// The extra margin needed near the spine so the binding never hides content.
+// "book": a glued/stitched book — the gutter alternates sides page by page
+// (right-hand pages need it on their left edge, left-hand pages on their
+// right). "spiral": the coil punches through the same edge on every single
+// page, so the gutter stays on the left throughout.
+function bindingMargins(pageNumber, binding){
+  if(binding === 'spiral') return { left: BINDING_GUTTER_MM, right: 0 };
+  if(binding === 'book'){
+    const isRightHand = pageNumber % 2 === 1;
+    return isRightHand ? { left: BINDING_GUTTER_MM, right: 0 } : { left: 0, right: BINDING_GUTTER_MM };
+  }
+  return { left: 0, right: 0 };
 }
 
 async function exportAlbumToPDF(album, mode){
@@ -1298,7 +1334,8 @@ async function exportAlbumToPDF(album, mode){
   const layouts = computeEffectiveLayouts(album, photos);
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: dims.w > dims.h ? 'landscape' : 'portrait', unit: 'mm', format: [dims.w, dims.h] });
-  const margin = 0, gutter = 3;
+  const gutter = 3;
+  const binding = album.binding || 'none';
 
   let cursor = 0;
   for(let p = 0; p < layouts.length; p++){
@@ -1326,7 +1363,7 @@ async function exportAlbumToPDF(album, mode){
     }
 
     const template = TEMPLATES[layouts[p]];
-    const rects = slotsToRects(template, dims.w, dims.h, margin, gutter);
+    const rects = slotsToRects(template, dims.w, dims.h, bindingMargins(p + 1, binding), gutter);
     const slice = photos.slice(cursor, cursor + template.slots.length);
     cursor += template.slots.length;
     const assigned = assignPhotosToSlots(slice, template, pageAspect);
