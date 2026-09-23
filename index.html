@@ -155,7 +155,8 @@
     position:relative;overflow:hidden;
     display:flex;align-items:center;justify-content:center;
   }
-  .cell img{width:100%;height:100%;object-fit:cover;display:block;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;-webkit-user-drag:none;}
+  .cell img{width:100%;height:100%;object-fit:contain;background:#111;display:block;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;-webkit-user-drag:none;}
+  .cover-page .cell img{object-fit:cover;background:none;} /* the cover photo still fills the page edge-to-edge */
   .cell[data-photo-id]{touch-action:none;}
   .cell-empty{background:rgba(44,66,87,0.06);}
   .cell.dragging{opacity:.35;}
@@ -179,6 +180,27 @@
     padding:5px 10px;border-radius:3px;font-size:12px;font-weight:500;
   }
   .btn-add-photo:hover{background:rgba(216,162,63,0.1);}
+
+  /* Visual layout picker — a grid of clickable mini previews of each page
+     template, grouped by photo count, instead of a text dropdown. */
+  .layout-picker-modal{width:min(560px, 90vw);max-height:80vh;overflow-y:auto;}
+  .layout-group-label{
+    font-size:11.5px;color:var(--cream-dim);text-transform:uppercase;letter-spacing:.04em;
+    margin:14px 0 6px;
+  }
+  .layout-group-label:first-child{margin-top:0;}
+  .layout-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(78px, 1fr));gap:10px;}
+  .layout-thumb{
+    background:var(--bg);border:1.5px solid var(--line);border-radius:5px;
+    padding:6px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;
+  }
+  .layout-thumb:hover{border-color:var(--amber-dim);}
+  .layout-thumb.selected{border-color:var(--amber);background:rgba(216,162,63,0.1);}
+  .layout-thumb-preview{
+    position:relative;width:100%;aspect-ratio:210/297;background:var(--paper);border-radius:2px;overflow:hidden;
+  }
+  .layout-thumb-slot{position:absolute;background:var(--bg-soft);border:1px solid var(--paper);}
+  .layout-thumb-label{font-size:10px;color:var(--cream-dim);text-align:center;line-height:1.25;}
 
   .toast{
     position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
@@ -296,6 +318,16 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" id="shareImportCancel">Ignorer</button>
       <button class="btn btn-amber" id="shareImportConfirm">Importer</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="layoutPickerBackdrop">
+  <div class="modal layout-picker-modal">
+    <h3>Choisir la mise en page</h3>
+    <div id="layoutPickerGrid"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="layoutPickerCancel">Fermer</button>
     </div>
   </div>
 </div>
@@ -481,6 +513,35 @@ function templateOptionsHtml(selected){
       `<option value="${id}" ${id===selected?'selected':''}>${t.label}</option>`
     ).join('')
   ).join('');
+}
+
+// A small visual preview of a template's slot arrangement — used by the
+// layout picker so choosing a page's layout is "see it, tap it" rather than
+// reading text options in a dropdown.
+function templateThumbHtml(id, t, selected){
+  const slots = t.slots.map(([c0,c1,r0,r1]) => {
+    const left = (c0-1)/t.cols*100, top = (r0-1)/t.rows*100;
+    const width = (c1-c0)/t.cols*100, height = (r1-r0)/t.rows*100;
+    return `<div class="layout-thumb-slot" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;"></div>`;
+  }).join('');
+  return `
+    <button type="button" class="layout-thumb${selected?' selected':''}" data-template-id="${id}">
+      <span class="layout-thumb-preview">${slots}</span>
+      <span class="layout-thumb-label">${t.label}</span>
+    </button>
+  `;
+}
+function layoutPickerGridHtml(selected){
+  const groups = {};
+  Object.entries(TEMPLATES).forEach(([id, t]) => {
+    (groups[t.slots.length] = groups[t.slots.length] || []).push([id, t]);
+  });
+  return Object.keys(groups).sort((a,b)=>a-b).map(count => `
+    <div class="layout-group-label">${count} photo${count>1?'s':''}</div>
+    <div class="layout-grid">
+      ${groups[count].map(([id, t]) => templateThumbHtml(id, t, id === selected)).join('')}
+    </div>
+  `).join('');
 }
 
 function pageAspectFor(format){
@@ -1037,13 +1098,15 @@ function renderPages(photos, album, layouts){
       <span class="page-label">Page ${pageIndex + 1}</span>
       <span style="display:flex;gap:8px;align-items:center;">
         <button class="btn-add-photo" title="Ajouter une photo">+ Photo</button>
-        <select class="page-select" data-page-index="${pageIndex}">${templateOptionsHtml(templateId)}</select>
+        <button class="page-select" data-page-index="${pageIndex}">🔲 Mise en page</button>
       </span>
     `;
     head.querySelector('.btn-add-photo').addEventListener('click', () => document.getElementById('fileInput').click());
-    head.querySelector('select').addEventListener('change', async (e) => {
-      await setPageTemplate(album, layouts, pageIndex, e.target.value);
-      renderMain();
+    head.querySelector('.page-select').addEventListener('click', () => {
+      openLayoutPicker(templateId, async (newTemplateId) => {
+        await setPageTemplate(album, layouts, pageIndex, newTemplateId);
+        renderMain();
+      });
     });
 
     const page = document.createElement('div');
@@ -1274,8 +1337,13 @@ async function exportAlbumToPDF(album, mode){
       const r = rects[i];
       try{
         const blob = await downloadPhotoBlob(photo);
-        const { dataUrl } = await makePrintImage(blob);
-        doc.addImage(dataUrl, 'JPEG', r.x, r.y, r.w, r.h, undefined, 'FAST');
+        const { dataUrl, w, h } = await makePrintImage(blob);
+        // Fit the photo entirely within its slot (never crop or stretch it —
+        // matches the "contain" framing used in the on-screen editor).
+        const scale = Math.min(r.w / w, r.h / h);
+        const drawW = w * scale, drawH = h * scale;
+        const drawX = r.x + (r.w - drawW) / 2, drawY = r.y + (r.h - drawH) / 2;
+        doc.addImage(dataUrl, 'JPEG', drawX, drawY, drawW, drawH, undefined, 'FAST');
       }catch(err){
         console.error('Image ignorée dans le PDF', photo.name, err);
       }
@@ -1315,6 +1383,22 @@ document.getElementById('btnSelectMode').addEventListener('click', () => {
   selectedAlbumIds.clear();
   renderAlbumList();
 });
+
+/* ---------- Layout picker modal ---------- */
+const layoutPickerBackdrop = document.getElementById('layoutPickerBackdrop');
+function openLayoutPicker(selectedId, onPick){
+  const grid = document.getElementById('layoutPickerGrid');
+  grid.innerHTML = layoutPickerGridHtml(selectedId);
+  grid.querySelectorAll('.layout-thumb').forEach(thumb => {
+    thumb.addEventListener('click', () => {
+      layoutPickerBackdrop.classList.remove('show');
+      onPick(thumb.dataset.templateId);
+    });
+  });
+  layoutPickerBackdrop.classList.add('show');
+}
+document.getElementById('layoutPickerCancel').addEventListener('click', () => layoutPickerBackdrop.classList.remove('show'));
+layoutPickerBackdrop.addEventListener('click', (e) => { if(e.target === layoutPickerBackdrop) layoutPickerBackdrop.classList.remove('show'); });
 
 /* ---------- New album modal ---------- */
 const modalBackdrop = document.getElementById('modalBackdrop');
