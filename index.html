@@ -1096,8 +1096,13 @@ function renderPages(photos, album, layouts){
       cursor += 1;
       const head = document.createElement('div');
       head.className = 'page-head';
-      head.innerHTML = `<span class="page-label">Page de couverture</span><button class="btn-add-photo" title="Ajouter une photo">+ Photo</button>`;
+      head.innerHTML = `<span class="page-label">Page de couverture</span><span style="display:flex;gap:8px;"><button class="btn-add-photo" title="Ajouter une photo">+ Photo</button><button class="btn-add-photo" id="btnAddPageCover" title="Ajouter une nouvelle page">+ Page</button></span>`;
       head.querySelector('.btn-add-photo').addEventListener('click', () => document.getElementById('fileInput').click());
+      head.querySelector('#btnAddPageCover').addEventListener('click', async () => {
+        await addBlankPage(album);
+        toast('Page ajoutée — choisis sa mise en page, les photos la rempliront ensuite');
+        renderMain();
+      });
 
       const page = document.createElement('div');
       page.className = 'page cover-page';
@@ -1141,10 +1146,16 @@ function renderPages(photos, album, layouts){
       <span class="page-label">Page ${pageIndex + 1}</span>
       <span style="display:flex;gap:8px;align-items:center;">
         <button class="btn-add-photo" title="Ajouter une photo">+ Photo</button>
+        <button class="btn-add-photo btn-add-page-here" title="Ajouter une nouvelle page">+ Page</button>
         <button class="page-select" data-page-index="${pageIndex}">🔲 Mise en page</button>
       </span>
     `;
     head.querySelector('.btn-add-photo').addEventListener('click', () => document.getElementById('fileInput').click());
+    head.querySelector('.btn-add-page-here').addEventListener('click', async () => {
+      await addBlankPage(album);
+      toast('Page ajoutée — choisis sa mise en page, les photos la rempliront ensuite');
+      renderMain();
+    });
     head.querySelector('.page-select').addEventListener('click', () => {
       openLayoutPicker(templateId, async (newTemplateId) => {
         await setPageTemplate(album, layouts, pageIndex, newTemplateId);
