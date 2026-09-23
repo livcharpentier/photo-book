@@ -1127,14 +1127,14 @@ function renderPages(photos, album, layouts){
     page.className = 'page';
     page.style.gridTemplateColumns = `repeat(${template.cols}, 1fr)`;
     page.style.gridTemplateRows = `repeat(${template.rows}, 1fr)`;
-    // Preview the binding gutter on screen too, so what you see roughly
-    // matches what the exported PDF will look like once bound.
+    // Preview the page margin (and binding gutter) on screen too, so what
+    // you see roughly matches what the exported PDF will look like.
     const pageDims = PAGE_DIMS[album.format];
     const bm = bindingMargins(pageIndex + 1, album.binding || 'none');
-    if(bm.left || bm.right){
-      page.style.paddingLeft = (bm.left / pageDims.w * 100) + '%';
-      page.style.paddingRight = (bm.right / pageDims.w * 100) + '%';
-    }
+    page.style.paddingLeft = (bm.left / pageDims.w * 100) + '%';
+    page.style.paddingRight = (bm.right / pageDims.w * 100) + '%';
+    page.style.paddingTop = (bm.top / pageDims.h * 100) + '%';
+    page.style.paddingBottom = (bm.bottom / pageDims.h * 100) + '%';
 
     template.slots.forEach(([c0,c1,r0,r1], slotIdx) => {
       const cell = document.createElement('div');
@@ -1310,22 +1310,27 @@ function slotsToRects(template, pageW, pageH, margins, gutter){
     h: (r1-r0) * unitH + (r1-r0-1) * gutter
   }));
 }
-const BINDING_GUTTER_MM = 15;
-// The extra margin needed near the spine so the binding never hides content.
+const BASE_MARGIN_MM = 8; // safety margin on every side of every interior page, always — regardless of binding
+const BINDING_GUTTER_MM = 15; // extra, added on top of the base margin near the spine
+// The extra margin needed near the spine so the binding never hides content,
+// on top of the flat safety margin every page gets on all four sides.
 // "book": a glued/stitched book — the gutter alternates sides page by page
 // (right-hand pages need it on their left edge, left-hand pages on their
 // right). "spiral": the coil punches through the same edge on every single
-// page, so the gutter stays on the left throughout.
+// page, so the gutter stays on the left throughout. "both": extra margin on
+// both sides everywhere — the safe default when recto-verso printing makes
+// it unclear which side will end up nearest the spine.
 function bindingMargins(pageNumber, binding){
-  if(binding === 'spiral') return { left: BINDING_GUTTER_MM, right: 0 };
-  if(binding === 'both') return { left: BINDING_GUTTER_MM, right: BINDING_GUTTER_MM };
+  const base = { left: BASE_MARGIN_MM, right: BASE_MARGIN_MM, top: BASE_MARGIN_MM, bottom: BASE_MARGIN_MM };
+  if(binding === 'spiral') return { ...base, left: base.left + BINDING_GUTTER_MM };
+  if(binding === 'both') return { ...base, left: base.left + BINDING_GUTTER_MM, right: base.right + BINDING_GUTTER_MM };
   if(binding === 'book'){
     // Page 1 is the cover, not part of the recto/verso pairing — the first
     // interior page (page 2) is the right-hand page of its spread.
     const isRightHand = pageNumber % 2 === 0;
-    return isRightHand ? { left: BINDING_GUTTER_MM, right: 0 } : { left: 0, right: BINDING_GUTTER_MM };
+    return isRightHand ? { ...base, left: base.left + BINDING_GUTTER_MM } : { ...base, right: base.right + BINDING_GUTTER_MM };
   }
-  return { left: 0, right: 0 };
+  return base;
 }
 
 async function exportAlbumToPDF(album, mode){
