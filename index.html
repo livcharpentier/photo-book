@@ -549,19 +549,27 @@ function assignPhotosToSlots(slicePhotos, template, pageAspect){
 // layout instead of being force-fit into landscape slots.
 function computeEffectiveLayouts(album, photos){
   const totalPhotos = photos.length;
-  if(totalPhotos === 0) return ['cover'];
-  if(totalPhotos === 1) return ['cover'];
+  const chosen = album.pageLayouts || [];
+
+  if(totalPhotos <= 1){
+    // Not enough photos yet to reserve a distinct closing page — just show
+    // the cover plus whatever empty pages have already been built with
+    // "+ Page", so the skeleton is visible before any photo exists.
+    return ['cover', ...chosen];
+  }
+
   const layouts = ['cover'];
   let covered = 1; // the cover page consumes the first photo
   const middleTotal = totalPhotos - 1; // reserve the very last photo for its own closing page
-  const chosen = album.pageLayouts || [];
   for(const tid of chosen){
-    if(covered >= middleTotal) break;
+    // Every explicitly-built page is always shown, even once it runs ahead
+    // of the photos available — it just renders with empty cells until
+    // more photos arrive (see renderPages/exportAlbumToPDF).
     layouts.push(tid);
     covered += TEMPLATES[tid].slots.length;
   }
   const pageAspect = pageAspectFor(album.format);
-  let lastPicked = null;
+  let lastPicked = chosen.length ? chosen[chosen.length-1] : null;
   while(covered < middleTotal){
     const budget = middleTotal - covered;
     if(budget <= 1) break; // leave this odd one out — the closing page below absorbs it
@@ -578,7 +586,7 @@ function computeEffectiveLayouts(album, photos){
     covered += TEMPLATES[bestId].slots.length;
     lastPicked = bestId;
   }
-  const leftover = totalPhotos - covered; // normally exactly 1 (the reserved last photo); occasionally 2
+  const leftover = totalPhotos - covered; // normally exactly 1 (the reserved last photo); occasionally 2; can be ≤0 if the built pages already used every photo
   if(leftover > 0) layouts.push(leftover >= 2 ? '2a' : '1a');
   return layouts;
 }
@@ -936,6 +944,7 @@ async function renderMain(){
             <option value="carre" ${album.format==='carre'?'selected':''}>Carré</option>
           </select>
         </div>
+        <button class="btn btn-ghost" id="btnAddPage">+ Page</button>
         <button class="btn btn-amber" id="btnExport" ${photos.length===0?'disabled':''}>Partager en PDF</button>
         <button class="btn btn-ghost" id="btnDownload" ${photos.length===0?'disabled':''}>⬇ Télécharger</button>
       </div>
@@ -951,6 +960,11 @@ async function renderMain(){
   document.getElementById('selFormat').addEventListener('change', async (e) => {
     album.format = e.target.value;
     await updateAlbum(album);
+    renderMain();
+  });
+  document.getElementById('btnAddPage').addEventListener('click', async () => {
+    await addBlankPage(album);
+    toast('Page ajoutée — choisis sa mise en page, les photos la rempliront ensuite');
     renderMain();
   });
   document.getElementById('btnExport').addEventListener('click', () => exportAlbumToPDF(album, 'share'));
@@ -1095,10 +1109,21 @@ function renderPages(photos, album, layouts){
 // (and every page before it, so their layouts don't silently drift) and let
 // computeEffectiveLayouts regenerate whatever comes after with the default.
 async function setPageTemplate(album, currentLayouts, pageIndex, newTemplateId){
-  // currentLayouts[0] is always the fixed cover page and never stored in
-  // album.pageLayouts (which only tracks the grid pages after it).
-  const kept = currentLayouts.slice(1, pageIndex);
-  kept.push(newTemplateId);
+  // Edits the one page in place without discarding pages built after it —
+  // important now that pages can be built ahead of the photos that will
+  // eventually fill them. currentLayouts[0] is always the fixed cover page
+  // and isn't itself stored in album.pageLayouts.
+  const chosenIndex = pageIndex - 1;
+  const kept = (album.pageLayouts || []).slice();
+  while(kept.length <= chosenIndex) kept.push(DEFAULT_TEMPLATE);
+  kept[chosenIndex] = newTemplateId;
+  album.pageLayouts = kept;
+  await updateAlbum(album);
+}
+
+async function addBlankPage(album){
+  const kept = (album.pageLayouts || []).slice();
+  kept.push(DEFAULT_TEMPLATE);
   album.pageLayouts = kept;
   await updateAlbum(album);
 }
