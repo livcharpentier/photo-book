@@ -1011,6 +1011,7 @@ async function renderMain(){
             <option value="none" ${(album.binding||'none')==='none'?'selected':''}>Aucune (plein cadre)</option>
             <option value="book" ${album.binding==='book'?'selected':''}>Livre relié (marge alternée)</option>
             <option value="spiral" ${album.binding==='spiral'?'selected':''}>Spirale (marge fixe à gauche)</option>
+            <option value="both" ${album.binding==='both'?'selected':''}>Recto-verso (marge des 2 côtés)</option>
           </select>
         </div>
         <button class="btn btn-ghost" id="btnAddPage">+ Page</button>
@@ -1317,8 +1318,11 @@ const BINDING_GUTTER_MM = 15;
 // page, so the gutter stays on the left throughout.
 function bindingMargins(pageNumber, binding){
   if(binding === 'spiral') return { left: BINDING_GUTTER_MM, right: 0 };
+  if(binding === 'both') return { left: BINDING_GUTTER_MM, right: BINDING_GUTTER_MM };
   if(binding === 'book'){
-    const isRightHand = pageNumber % 2 === 1;
+    // Page 1 is the cover, not part of the recto/verso pairing — the first
+    // interior page (page 2) is the right-hand page of its spread.
+    const isRightHand = pageNumber % 2 === 0;
     return isRightHand ? { left: BINDING_GUTTER_MM, right: 0 } : { left: 0, right: BINDING_GUTTER_MM };
   }
   return { left: 0, right: 0 };
