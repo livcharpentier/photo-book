@@ -1415,11 +1415,16 @@ document.getElementById('newAlbumName').addEventListener('keydown', (e) => { if(
 async function createNewAlbum(){
   const name = document.getElementById('newAlbumName').value.trim();
   if(!name) return;
-  const album = await createAlbum(name);
-  currentAlbumId = album.id;
-  modalBackdrop.classList.remove('show');
-  await renderAlbumList();
-  await renderMain();
+  try{
+    const album = await createAlbum(name);
+    currentAlbumId = album.id;
+    modalBackdrop.classList.remove('show');
+    await renderAlbumList();
+    await renderMain();
+  }catch(err){
+    console.error('Échec création album', err);
+    toast('Échec de la création — vérifie ta connexion et réessaie');
+  }
 }
 
 /* ---------- Mobile sidebar toggle ---------- */
