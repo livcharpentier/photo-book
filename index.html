@@ -891,7 +891,8 @@ async function renderMain(){
             <option value="carre" ${album.format==='carre'?'selected':''}>Carré</option>
           </select>
         </div>
-        <button class="btn btn-amber" id="btnExport" ${photos.length===0?'disabled':''}>Exporter / Partager en PDF</button>
+        <button class="btn btn-amber" id="btnExport" ${photos.length===0?'disabled':''}>Partager en PDF</button>
+        <button class="btn btn-ghost" id="btnDownload" ${photos.length===0?'disabled':''}>⬇ Télécharger</button>
       </div>
     </div>
 
@@ -907,7 +908,8 @@ async function renderMain(){
     await updateAlbum(album);
     renderMain();
   });
-  document.getElementById('btnExport').addEventListener('click', () => exportAlbumToPDF(album));
+  document.getElementById('btnExport').addEventListener('click', () => exportAlbumToPDF(album, 'share'));
+  document.getElementById('btnDownload').addEventListener('click', () => exportAlbumToPDF(album, 'download'));
 
   const dropZone = document.getElementById('dropZone');
   dropZone.addEventListener('click', () => document.getElementById('fileInput').click());
@@ -1152,7 +1154,7 @@ function slotsToRects(template, pageW, pageH, margin, gutter){
   }));
 }
 
-async function exportAlbumToPDF(album){
+async function exportAlbumToPDF(album, mode){
   const rawPhotos = await listPhotos(album.id);
   if(rawPhotos.length === 0) return;
   toast('Génération du PDF…');
@@ -1212,8 +1214,16 @@ async function exportAlbumToPDF(album){
   const filename = `${album.name.replace(/[^a-z0-9]+/gi,'_')}.pdf`;
   const pdfBlob = doc.output('blob');
 
-  // Offer the native share sheet (WhatsApp, Mail, etc.) when the browser
-  // supports sharing files — falls back to a plain download otherwise.
+  // "download" always saves a real file (what you need to copy to a USB
+  // key for a print shop). "share" tries the native share sheet (WhatsApp,
+  // Mail...) first, falling back to a plain download if unsupported or if
+  // the person picks a target that isn't actually available.
+  if(mode === 'download'){
+    doc.save(filename);
+    toast('PDF téléchargé');
+    return;
+  }
+
   const file = new File([pdfBlob], filename, { type: 'application/pdf' });
   if(navigator.canShare && navigator.canShare({ files: [file] })){
     try{
